@@ -8,7 +8,7 @@ export const MODELS = [
 ];
 
 const SETTINGS_KEY = 'medstudy.settings';
-const DEFAULTS = { apiKey: '', model: 'claude-opus-5-5', target: 100, batch: 15, podcastMinutes: 5 };
+const DEFAULTS = { apiKey: '', model: 'claude-opus-5-5', target: 100, batch: 15, podcastMinutes: 5, cardTarget: 60, newPerDay: 25 };
 
 export function getSettings() {
   try {

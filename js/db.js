@@ -1,7 +1,7 @@
 // Persistență locală în IndexedDB (totul rămâne în browserul utilizatorului).
 const DB_NAME = 'medstudy';
-const DB_VERSION = 1;
-export const STORES = ['sources', 'chapters', 'questions', 'outputs'];
+const DB_VERSION = 2;
+export const STORES = ['sources', 'chapters', 'questions', 'outputs', 'cards'];
 
 let dbPromise = null;
 

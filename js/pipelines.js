@@ -26,6 +26,9 @@ export function chapterText(chapter, sourcesById, maxChars = Infinity) {
     parts.push(`### Sursa: ${src.name}\n` + src.blocks.slice(from, to + 1).join('\n'));
   }
   let t = parts.join('\n\n');
+  if (!t.trim() && chapter.refText?.trim()) {
+    t = '(Nu există material de curs încărcat pentru acest capitol. Folosește ca programă grilele și cardurile de mai jos, completate cu cunoștințele medicale standard; marchează orice completare cu „(completare)".)\n\n' + chapter.refText;
+  }
   if (t.length > maxChars) t = t.slice(0, maxChars);
   return t;
 }
@@ -371,3 +374,163 @@ export async function podcast(chapter, sourcesById, minutes, { signal, onStatus 
 }
 
 export { LETTERS };
+
+// ---------- 8. Generalizare: asociere de elemente oarecare la capitole ----------
+export async function assignItems(items, textOf, chapters, { signal, onStatus = () => {}, label = 'elemente' } = {}) {
+  const schema = {
+    type: 'object',
+    properties: { map: { type: 'array', items: { type: 'object', properties: { i: { type: 'integer' }, chapter: { type: 'integer' } }, required: ['i', 'chapter'], additionalProperties: false } } },
+    required: ['map'], additionalProperties: false,
+  };
+  const out = new Map();
+  for (let i = 0; i < items.length; i += 150) {
+    const part = items.slice(i, i + 150);
+    onStatus(`Asociez ${label} la capitole (${Math.min(i + 150, items.length)}/${items.length})…`);
+    const res = await callJSON({
+      system: 'Asociezi fiecare element (grilă sau card de studiu medical) capitolului căruia îi aparține. Răspunde cu numărul capitolului (0 dacă nu se potrivește niciunul).',
+      content: `Capitole:\n${chapterMenu(chapters)}\n\nElemente:\n` + part.map((x, k) => `${k + 1}. ${textOf(x).slice(0, 400)}`).join('\n'),
+      schema, effort: 'low', maxTokens: 16000, signal,
+    });
+    for (const m of res.map) {
+      const it = part[m.i - 1];
+      if (it) out.set(it.id, chapters[m.chapter - 1]?.id || null);
+    }
+  }
+  return out; // id -> chapterId
+}
+
+// Bloc de sistem cache-uit cu materialul capitolului (refolosit între apeluri pentru același capitol).
+function materialSystem(intro, chapter, sourcesById, maxChars = 400000) {
+  return [
+    { type: 'text', text: intro },
+    { type: 'text', text: `CAPITOL: ${chapter.title}\nSubteme: ${(chapter.topics || []).join('; ')}\n\nMATERIAL:\n${chapterText(chapter, sourcesById, maxChars)}`, cache_control: { type: 'ephemeral' } },
+  ];
+}
+
+// ---------- 9. Flashcard-uri (repetiție spațiată) ----------
+const CARDS_SCHEMA = {
+  type: 'object',
+  properties: { cards: { type: 'array', items: { type: 'object', properties: { section: { type: 'string' }, front: { type: 'string' }, back: { type: 'string' } }, required: ['section', 'front', 'back'], additionalProperties: false } } },
+  required: ['cards'], additionalProperties: false,
+};
+
+export async function generateCards(chapter, sourcesById, existing, count, { signal, onStatus = () => {} } = {}) {
+  const res = await callJSON({
+    system: materialSystem(
+      'Scrii flashcard-uri pentru repetiție spațiată (stil Anki), în limba română, pentru examenul de medicină. Reguli: ' +
+      '(1) O întrebare, un singur răspuns: un card cere UN lucru („Cauzele febrei continue?"), nu o listă uriașă; listele lungi se sparg în mai multe carduri. ' +
+      '(2) Construiește carduri pe DISCRIMINATORI: ce deosebește semne/sindroame care se confundă (ex. „ptoză + mioză vs ptoză + midriază?"). ' +
+      '(3) Pragurile numerice primesc card propriu. (4) Mnemotehnici doar pentru liste arbitrare; în rest, mecanismul. ' +
+      '(5) Fața = întrebare scurtă; spatele = răspuns concis (poate avea 2-5 rânduri separate prin \\n), cu mecanismul pe scurt când ajută. ' +
+      '(6) „section" = subtema capitolului din care face parte cardul (folosește exact denumirile subtemelor date). Bazează-te strict pe material.',
+      chapter, sourcesById),
+    content: `Scrie exact ${count} carduri NOI, distribuite pe toate subtemele.\n` +
+      (existing.length ? `Carduri existente (NU le repeta):\n${existing.map((c) => '- ' + c.front.slice(0, 120)).join('\n')}` : ''),
+    schema: CARDS_SCHEMA, effort: 'medium', maxTokens: 64000, signal,
+    onText: (n) => onStatus(`… ${n} caractere`),
+  });
+  const seen = new Set(existing.map((c) => normStem(c.front)));
+  return res.cards.filter((c) => c.front && c.back && !seen.has(normStem(c.front)) && seen.add(normStem(c.front)))
+    .map((c) => ({ id: uid('c_'), chapterId: chapter.id, section: c.section, front: c.front.trim(), back: c.back.trim(), origin: 'generat', srs: null, createdAt: Date.now() }));
+}
+
+// ---------- 10. Cazuri clinice ----------
+const CASES_SCHEMA = {
+  type: 'object',
+  properties: { cases: { type: 'array', items: { type: 'object', properties: { q: { type: 'string' }, o: { type: 'array', items: { type: 'string' } }, a: { type: 'integer' }, w: { type: 'string' } }, required: ['q', 'o', 'a', 'w'], additionalProperties: false } } },
+  required: ['cases'], additionalProperties: false,
+};
+
+export async function generateCases(chapter, sourcesById, existing, count, { signal, onStatus = () => {} } = {}) {
+  const res = await callJSON({
+    system: materialSystem(
+      'Scrii cazuri clinice scurte pentru antrenament, în limba română. Fiecare caz: o vignetă de 1-3 fraze (vârstă, context, semne concrete, valori) ' +
+      'și o întrebare implicită de tipul „ce este / ce tip / care e cauza probabilă?". „o" = 4 variante plauzibile (diagnostice sau interpretări care se confundă), ' +
+      '„a" = indicele variantei corecte (0-3), „w" = explicația raționamentului în 1-3 fraze: ce indicii decid și de ce nu celelalte. ' +
+      'Cazurile testează ALEGEREA conceptului potrivit (diagnostic diferențial), nu memorarea unei definiții. Bazează-te pe material.',
+      chapter, sourcesById),
+    content: `Scrie ${count} cazuri NOI, variate (acoperă subteme diferite).` + (existing.length ? `\nCazuri existente (nu le repeta):\n${existing.map((c) => '- ' + c.q.slice(0, 120)).join('\n')}` : ''),
+    schema: CASES_SCHEMA, effort: 'medium', maxTokens: 32000, signal,
+    onText: (n) => onStatus(`… ${n} caractere`),
+  });
+  return res.cases.filter((c) => c.o.length >= 2 && c.a >= 0 && c.a < c.o.length);
+}
+
+// ---------- 11. Recall (blurting) + tabele de contrast ----------
+const RECALL_SCHEMA = {
+  type: 'object',
+  properties: {
+    recall: { type: 'array', items: { type: 'object', properties: { t: { type: 'string' }, p: { type: 'string' }, i: { type: 'array', items: { type: 'string' } } }, required: ['t', 'p', 'i'], additionalProperties: false } },
+    contrasts: { type: 'array', items: { type: 'object', properties: { t: { type: 'string' }, h: { type: 'array', items: { type: 'string' } }, r: { type: 'array', items: { type: 'array', items: { type: 'string' } } } }, required: ['t', 'h', 'r'], additionalProperties: false } },
+  },
+  required: ['recall', 'contrasts'], additionalProperties: false,
+};
+
+export async function generateRecall(chapter, sourcesById, { signal, onStatus = () => {} } = {}) {
+  return callJSON({
+    system: materialSystem(
+      'Pregătești fișe de RECALL LIBER (blurting) și TABELE DE CONTRAST pentru un capitol de medicină, în limba română. ' +
+      'recall: 6-12 fișe; t = titlul temei, p = sarcina („Listează în ordine…", „Desenează… și scrie cauzele…"), i = checklist-ul complet al elementelor de reamintit (fiecare element scurt, autosuficient). ' +
+      'contrasts: 2-5 tabele care pun față în față entitățile care se confundă la examen; t = titlu, h = antetele coloanelor (prima coloană = entitatea), r = rânduri (fiecare rând are exact atâtea celule câte antete). ' +
+      'Totul strict pe baza materialului.',
+      chapter, sourcesById),
+    content: 'Generează fișele de recall și tabelele de contrast pentru acest capitol.',
+    schema: RECALL_SCHEMA, effort: 'medium', maxTokens: 32000, signal,
+    onText: (n) => onStatus(`… ${n} caractere`),
+  });
+}
+
+// ---------- 12. Explicații de mecanism („De ce?") ----------
+const EXPLAIN_SCHEMA = {
+  type: 'object',
+  properties: { items: { type: 'array', items: { type: 'object', properties: { section: { type: 'string' }, title: { type: 'string' }, text: { type: 'string' } }, required: ['section', 'title', 'text'], additionalProperties: false } } },
+  required: ['items'], additionalProperties: false,
+};
+
+export async function generateExplanations(chapter, sourcesById, { signal, onStatus = () => {} } = {}) {
+  const res = await callJSON({
+    system: materialSystem(
+      'Scrii EXPLICAȚII DE MECANISM pentru un capitol de medicină, în limba română: pentru fiecare subtemă, 1-3 paragrafe scurte care leagă semnele/faptele de cauza lor ' +
+      '(„de ce apare X", „de ce Y se corectează cu O₂ iar Z nu"). Un fapt legat de un motiv se uită mult mai greu. ' +
+      'section = denumirea exactă a subtemei; title = ideea-cheie ca titlu scurt; text = explicația (Markdown simplu, termenii-cheie în **bold**). Bazează-te pe material.',
+      chapter, sourcesById),
+    content: 'Scrie explicațiile pentru toate subtemele capitolului.',
+    schema: EXPLAIN_SCHEMA, effort: 'medium', maxTokens: 32000, signal,
+    onText: (n) => onStatus(`… ${n} caractere`),
+  });
+  return res.items;
+}
+
+// ---------- 13. Verificarea cheilor față de curs ----------
+const VERIFY_SCHEMA = {
+  type: 'object',
+  properties: { results: { type: 'array', items: { type: 'object', properties: { q: { type: 'integer' }, ok: { type: 'boolean' }, correct: { type: 'array', items: { type: 'integer' } }, note: { type: 'string' } }, required: ['q', 'ok', 'correct', 'note'], additionalProperties: false } } },
+  required: ['results'], additionalProperties: false,
+};
+
+/** Verifică grilele pe loturi; întoarce [{id, correct, note, changed}]. */
+export async function verifyKeys(chapter, sourcesById, questions, { signal, onStatus = () => {} } = {}) {
+  const out = [];
+  for (let i = 0; i < questions.length; i += 40) {
+    const part = questions.slice(i, i + 40);
+    onStatus(`Verific cheile (${Math.min(i + 40, questions.length)}/${questions.length})…`);
+    const res = await callJSON({
+      system: materialSystem(
+        'Verifici cheile (răspunsurile corecte) ale unor grile față de MATERIALUL DE CURS, care are prioritate față de orice altă sursă. ' +
+        'Pentru fiecare grilă: ok=true dacă cheia dată e corectă conform cursului; altfel ok=false, „correct" = indicii corecți conform cursului (0=A … 4=E), ' +
+        'iar „note" explică scurt diferența („Cheia din sursă: B; conform cursului corect este C, deoarece …", cu pagina/secțiunea dacă reiese). ' +
+        'Dacă materialul nu acoperă grila, ok=true și note="" (nu modifica pe baza presupunerilor). Când ok=true, „correct" repetă cheia dată.',
+        chapter, sourcesById),
+      content: part.map((q, k) => questionToText(q, k)).join('\n\n'),
+      schema: VERIFY_SCHEMA, effort: 'medium', maxTokens: 32000, signal,
+    });
+    for (const r of res.results) {
+      const q = part[r.q - 1];
+      if (!q) continue;
+      const correct = [...new Set(r.correct)].filter((c) => c >= 0 && c < q.options.length).sort();
+      const changed = !r.ok && correct.length && correct.join() !== [...q.correct].sort().join();
+      out.push({ id: q.id, correct: changed ? correct : q.correct, note: changed ? r.note : (q.note || ''), changed });
+    }
+  }
+  return out;
+}
