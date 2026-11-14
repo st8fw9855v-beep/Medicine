@@ -17,7 +17,7 @@ const BASE_SRC = new Set(Object.keys(BASE.SOURCES));
    Setări locale (per persoană)
    ===================================================================== */
 const SET_KEY = 'semio-plus-settings';
-const DEFAULTS = { target: 100, batch: 15, cardTarget: 60, podcastMinutes: 5 };
+const DEFAULTS = { target: 100, batch: 15, cardTarget: 60, podcastMinutes: 5, autoFill: true };
 function getSettings() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SET_KEY) || '{}') }; } catch (e) { return { ...DEFAULTS }; } }
 function saveSettings(s) { try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
 
@@ -205,7 +205,7 @@ function chOptions(sel, { all = false, unassigned = false } = {}) {
   const v = sel.value;
   sel.innerHTML = (all ? '<option value="">All chapters</option>' : '') +
     CH_ORDER.map((k) => `<option value="${k}">${esc(CHAPTERS[k])}</option>`).join('') +
-    (unassigned && GQ.some((x) => !x.ch) ? '<option value="__none">— Not sorted into a chapter yet</option>' : '');
+    (unassigned && GQ.some((x) => !x.ch) ? '<option value="__none">— Question bank (no chapter yet)</option>' : '');
   if ([...sel.options].some((o) => o.value === v)) sel.value = v;
 }
 
@@ -478,7 +478,7 @@ async function runJob(title, fn, kind = 'ai') {
 /* =====================================================================
    NOU: capabilitățile paginii Claude
    ===================================================================== */
-const R = { db: null, user: null, sample: null, tts: null, dl: null, canWrite: false, ready: false, uid: null, images: null };
+const R = { db: null, user: null, sample: null, tts: null, dl: null, canWrite: false, ready: false, uid: null, images: null, isOwner: false };
 function aiReady() { return !!(R.sample && R.db && R.canWrite); }
 function needAI() {
   if (aiReady()) return false;
@@ -542,6 +542,7 @@ function subscribe() {
     R.db.collection(coll).onSnapshot((snap) => {
       U[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       rebuild(); refreshSoon();
+      if (key === 'sources' && !R.firstSources) { R.firstSources = true; if (R.isOwner) setTimeout(autoProcess, 1500); }
     }, (e) => { console.warn('db', coll, e); });
   }
 }
@@ -564,6 +565,7 @@ async function initRuntime() {
     const can = await R.user.can?.('data.write').catch(() => null);
     R.canWrite = can !== false;
     R.uid = await R.user.id?.().catch(() => null);
+    R.isOwner = !!(await R.user.isOwner?.().catch(() => false));
   }
   if (R.sample) R.images = (await R.sample.limits?.().catch(() => null))?.images || null;
   R.ready = true;
@@ -718,7 +720,7 @@ const Q_JSON = '{"questions":[{"type":"CS" sau "CM","stem":"enunț","options":["
 
 /* ---------- segmentare ---------- */
 async function segmentNew(job, mats) {
-  let created = 0, attached = 0;
+  let created = 0, attached = 0; const createdIds = [], touched = new Set();
   for (const src of mats) {
     const blocks = await sourceBlocks(src.id);
     // bucăți de ~MAX_MATERIAL caractere numerotate pe blocuri
@@ -746,33 +748,40 @@ async function segmentNew(job, mats) {
         if (ex) {
           const m = chMeta(ex) || { id: ex, title: BASE.CHAPTERS[ex] || CHAPTERS[ex], summary: '', topics: [], ranges: [], sections: {}, order: 0 };
           const next = { ...m, ranges: [...(m.ranges || []), range], topics: [...new Set([...(m.topics || []), ...(c.topics || [])])], summary: m.summary || c.summary || '' };
-          await put('chapters', next); attached++;
+          await put('chapters', next); attached++; touched.add(ex);
         } else {
           const sections = {}; for (const t of c.topics || []) sections[uid('s')] = t;
-          await put('chapters', { id: uid('ch'), title: String(c.title || 'Capitol nou'), summary: String(c.summary || ''), topics: c.topics || [], ranges: [range], sections, order: Date.now() + created });
-          created++;
+          const nid = uid('ch');
+          await put('chapters', { id: nid, title: String(c.title || 'Capitol nou'), summary: String(c.summary || ''), topics: c.topics || [], ranges: [range], sections, order: Date.now() + created });
+          created++; createdIds.push(nid); touched.add(nid);
         }
       }
     }
     await put('sources', { ...src, segmented: true });
   }
+  segmentNew.createdIds = createdIds; segmentNew.touched = [...touched];
   return `${created} new chapters, material added to ${attached} existing`;
 }
 
 /* ---------- extragerea grilelor din bănci ---------- */
-async function extractBank(job, src) {
+const srcNow = (id) => U.sources.find((s) => s.id === id);
+async function extractBank(job, src, label = '') {
   const blocks = await sourceBlocks(src.id);
   const chunks = chunkBlocks(blocks, 20000, 1);
   const tail = blocks.join('\n').slice(-10000);
-  const menu = CH_ORDER.map((id, i) => `${i + 1}. ${CHAPTERS[id]} — subteme: ${topicsOf(id).slice(0, 12).join('; ')}`).join('\n');
+  // Grilele din bancă (Drive) nu intră în „Alte capitole": așteaptă capitolul lor.
+  const ids = CH_ORDER.filter((id) => !(src.pool && id === 'X'));
+  const menu = ids.map((id, i) => `${i + 1}. ${CHAPTERS[id]} — subteme: ${topicsOf(id).slice(0, 12).join('; ')}`).join('\n');
   const seen = new Set(GQ.map((x) => normStem(x.q)));
-  let added = 0;
-  for (let i = 0; i < chunks.length; i++) {
-    job.status(`Reading questions from “${src.name}” (${i + 1}/${chunks.length})…`); job.progress(i / chunks.length);
+  let added = src.extractedCount || 0;
+  for (let i = src.doneChunks || 0; i < chunks.length; i++) {
+    if (job.signal.aborted) throw new Error('Stopped.');
+    job.status(`${label}Reading questions from “${src.name}” (part ${i + 1}/${chunks.length})…`); job.progress(i / chunks.length);
     const res = await askJSON(
       'Extragi grile (întrebări cu răspuns multiplu) dintr-un document de examen de medicină, în română.\n' +
       'Reguli: (1) Copiază fidel enunțul și variantele (fără litera din față). (2) "correct" = indicii variantelor corecte (0=A … 4=E). Dacă documentul dă răspunsul/cheia, folosește-o și pune "answerSource":"cheie"; altfel deduce răspunsul din cunoștințele medicale și pune "answerSource":"dedus". ' +
-      '(3) "chapter" = numărul capitolului din listă căruia îi aparține grila, 0 dacă niciunul. (4) "explanation" = 1-3 fraze. (5) Ignoră grilele tăiate la începutul/finalul fragmentului. Nu inventa grile.\n\n' +
+      '(3) "chapter" = numărul capitolului din listă căruia îi aparține grila, DOAR dacă aparține clar acelui capitol (aceeași materie); altfel 0 — grila rămâne în bancă până apare capitolul ei. (4) "explanation" = 1-3 fraze. (5) Ignoră grilele tăiate la începutul/finalul fragmentului, întrebările deschise fără variante și textele care nu sunt grile. Nu inventa grile. (6) Ignoră grilele care nu sunt în limba română.\n' +
+      (src.subject ? `MATERIA (după folderul sursei): ${src.subject}.\n` : '') + '\n' +
       `CAPITOLE:\n${menu}\n\n` + (tail && i < chunks.length - 1 ? `FINALUL DOCUMENTULUI (poate conține cheia):\n${tail}\n\n` : '') +
       `FRAGMENTUL ${i + 1}/${chunks.length}:\n${chunks[i]}\n\n` +
       'Răspunde doar cu JSON: {"questions":[{"stem":"…","options":["…"],"correct":[0],"explanation":"…","topic":"…","chapter":n,"answerSource":"cheie"|"dedus"}]}',
@@ -781,30 +790,42 @@ async function extractBank(job, src) {
     for (const raw of res.questions || []) {
       const q = sanitizeQ(raw); if (!q) continue;
       const k = normStem(q.q); if (seen.has(k)) continue; seen.add(k);
-      const ch = CH_ORDER[(+raw.chapter || 0) - 1] || '';
+      const ch = ids[(+raw.chapter || 0) - 1] || '';
       (byCh[ch] ||= []).push({ id: uid('u'), ...q, n: raw.answerSource === 'dedus' ? 'This source gave no answer key for this question; the key was set by the AI. Check it against the course.' : '', m: false });
     }
-    for (const [ch, items] of Object.entries(byCh)) { await put('grilePacks', { id: uid('gp'), ch, src: src.id, items, createdAt: Date.now() }); added += items.length; }
+    for (const [ch, items] of Object.entries(byCh)) { await put('grilePacks', { id: uid('gp'), ch, src: src.id, subj: src.subject || '', items, createdAt: Date.now() }); added += items.length; }
+    await put('sources', { ...(srcNow(src.id) || src), doneChunks: i + 1, nChunks: chunks.length, extractedCount: added });
   }
-  await put('sources', { ...src, extractedAt: Date.now(), extractedCount: added });
+  await put('sources', { ...(srcNow(src.id) || src), extractedAt: Date.now(), extractedCount: added });
   return `“${src.name}”: ${added} new questions (duplicates skipped)`;
 }
 
-async function assignOrphans(job) {
+async function assignOrphans(job, focus = null) {
   const packs = U.grilePacks.filter((p) => !CHAPTERS[p.ch]);
-  const items = packs.flatMap((p) => p.items.map((x) => ({ ...x, src: p.src })));
+  let items = packs.flatMap((p) => p.items.map((x) => ({ ...x, src: p.src, subj: p.subj || '' })));
   if (!items.length) return 0;
-  const menu = CH_ORDER.map((id, i) => `${i + 1}. ${CHAPTERS[id]} — ${topicsOf(id).slice(0, 10).join('; ')}`).join('\n');
+  const ids = CH_ORDER.filter((id) => id !== 'X');
+  const target = focus?.length ? focus : ids;
+  // Întâi: din ce materii ale băncii pot veni grile pentru aceste capitole (un apel scurt).
+  const subjects = [...new Set(items.map((x) => x.subj).filter(Boolean))];
+  if (subjects.length > 1) {
+    job.status('Matching the question bank to the chapters…');
+    const res = await askJSON(`Capitole de medicină:\n${target.map((id) => `- ${CHAPTERS[id]} (${topicsOf(id).slice(0, 8).join('; ')})`).join('\n')}\n\nMaterii din banca de grile: ${subjects.join(', ')}.\nCare dintre aceste materii pot conține grile pentru capitolele de mai sus? Răspunde doar cu JSON: {"subjects":["…"]}`, { signal: job.signal, tier: 'quick' });
+    const keep = new Set((res.subjects || []).map((x) => normStem(x)));
+    items = items.filter((x) => !x.subj || keep.has(normStem(x.subj)));
+    if (!items.length) return 0;
+  }
+  const menu = ids.map((id, i) => `${i + 1}. ${CHAPTERS[id]} — ${topicsOf(id).slice(0, 10).join('; ')}`).join('\n');
   const moved = {};
   for (let i = 0; i < items.length; i += 120) {
     const part = items.slice(i, i + 120);
     job.status(`Sorting questions into chapters (${Math.min(i + 120, items.length)}/${items.length})…`);
-    const res = await askJSON(`Asociază fiecare grilă capitolului căruia îi aparține (0 dacă niciunul).\n\nCAPITOLE:\n${menu}\n\nGRILE:\n` +
+    const res = await askJSON(`Asociază fiecare grilă capitolului căruia îi aparține clar (0 dacă niciunul — grila rămâne în bancă).\n\nCAPITOLE:\n${menu}\n\nGRILE:\n` +
       part.map((x, k) => `${k + 1}. ${x.q} | ${x.o.join(' | ')}`.slice(0, 400)).join('\n') + '\n\nRăspunde doar cu JSON: {"map":[{"q":n,"chapter":n}]}', { signal: job.signal, tier: 'quick' });
-    for (const m of res.map || []) { const x = part[m.q - 1]; const ch = CH_ORDER[m.chapter - 1]; if (x && ch) (moved[ch + '|' + x.src] ||= []).push(x); }
+    for (const m of res.map || []) { const x = part[m.q - 1]; const ch = ids[m.chapter - 1]; if (x && ch) (moved[ch + '|' + x.src + '|' + x.subj] ||= []).push(x); }
   }
   const movedIds = new Set(Object.values(moved).flat().map((x) => x.id));
-  for (const [key, list] of Object.entries(moved)) { const [ch, src] = key.split('|'); await put('grilePacks', { id: uid('gp'), ch, src, items: list.map(({ src: _s, ...x }) => x), createdAt: Date.now() }); }
+  for (const [key, list] of Object.entries(moved)) { const [ch, src, subj] = key.split('|'); await put('grilePacks', { id: uid('gp'), ch, src, subj, items: list.map(({ src: _s, subj: _j, ...x }) => x), createdAt: Date.now() }); }
   for (const p of packs) { const rest = p.items.filter((x) => !movedIds.has(x.id)); if (rest.length !== p.items.length) rest.length ? await put('grilePacks', { ...p, items: rest }) : await del('grilePacks', p.id); }
   return movedIds.size;
 }
@@ -1031,13 +1052,27 @@ async function autoProcess() {
   const newBanks = U.sources.filter((s) => s.kind === 'grile' && !s.extractedAt);
   if (!newMat.length && !newBanks.length) return;
   processing = true;
-  await runJob('Processing new sources', async (job) => {
+  await runJob(newMat.length ? 'Processing new sources' : 'Reading the question bank', async (job) => {
     const msg = [];
-    if (newMat.length) msg.push(await segmentNew(job, newMat));
-    for (const src of U.sources.filter((s) => s.kind === 'grile' && !s.extractedAt)) msg.push(await extractBank(job, src));
-    const n = await assignOrphans(job);
-    if (n) msg.push(`${n} questions sorted into chapters`);
-    return msg.join(' · ');
+    let touched = [];
+    if (newMat.length) { msg.push(await segmentNew(job, newMat)); touched = segmentNew.touched || []; }
+    const banks = U.sources.filter((s) => s.kind === 'grile' && !s.extractedAt);
+    let bankAdded = 0;
+    for (let i = 0; i < banks.length; i++) {
+      const before = srcNow(banks[i].id)?.extractedCount || 0;
+      await extractBank(job, srcNow(banks[i].id) || banks[i], banks.length > 1 ? `[file ${i + 1}/${banks.length}] ` : '');
+      bankAdded += (srcNow(banks[i].id)?.extractedCount || 0) - before;
+    }
+    if (bankAdded) msg.push(`${bankAdded} questions read from the question banks`);
+    const n = await assignOrphans(job, touched.length ? touched : null);
+    if (n) msg.push(`${n} questions taken from the bank into chapters`);
+    const s = getSettings();
+    if (s.autoFill && touched.length) {
+      let made = 0;
+      for (let i = 0; i < touched.length; i++) if (CHAPTERS[touched[i]] && chGrile(touched[i]).length < s.target) made += await fillOne(job, touched[i], s.target, s.batch, `[${i + 1}/${touched.length}] `);
+      if (made) msg.push(`${made} new questions written to reach ${s.target} per chapter`);
+    }
+    return msg.join(' · ') || 'Nothing new to process.';
   });
   processing = false;
 }
@@ -1090,9 +1125,20 @@ function renderSources() {
   $('#upload-box').hidden = !aiReady();
   const mats = U.sources.filter((s) => s.kind === 'material'), banks = U.sources.filter((s) => s.kind === 'grile');
   const row = (s) => `<div class="srow"><div><div class="nm">${s.kind === 'material' ? '📘' : '📝'} ${esc(s.name)}</div>
-      <div class="hint">${fmtN(s.chars || 0)} characters${s.transcribed ? ' · transcribed by Claude' : ''} · ${s.kind === 'material' ? (s.segmented ? 'split into chapters' : '<b>not split yet</b>') : (s.extractedAt ? `${s.extractedCount ?? 0} questions added` : '<b>not sorted yet</b>')}</div></div>
+      <div class="hint">${fmtN(s.chars || 0)} characters${s.transcribed ? ' · transcribed by Claude' : ''} · ${s.kind === 'material' ? (s.segmented ? 'split into chapters' : '<b>not split yet</b>') : (s.extractedAt ? `${s.extractedCount ?? 0} questions added` : s.doneChunks ? `reading: part ${s.doneChunks}/${s.nChunks || '?'}` : '<b>not read yet</b>')}${s.subject ? ` · ${esc(s.subject)}` : ''}${s.origin ? ` · <span title="${esc(s.origin)}">from Drive</span>` : ''}</div></div>
       ${aiReady() ? `<div class="acts"><button class="btn small" data-flip="${s.id}" title="Switch between course material and question bank">⇄</button><button class="btn small danger" data-delsrc="${s.id}">Delete</button></div>` : ''}</div>`;
-  $('#src-list').innerHTML = (mats.length || banks.length) ? `<div class="box">${[...mats, ...banks].map(row).join('')}</div>` : '';
+  const pool = GQ.filter((x) => !x.ch && x.src !== 'ai');
+  const bySubj = {}; for (const p of U.grilePacks.filter((p) => !CHAPTERS[p.ch])) bySubj[p.subj || 'other'] = (bySubj[p.subj || 'other'] || 0) + p.items.length;
+  const pending = banks.filter((s) => !s.extractedAt);
+  const bankBox = (banks.length ? `<div class="box"><b>Question bank</b>
+    <p class="hint" style="margin:6px 0">${fmtN(banks.reduce((n, s) => n + (s.extractedCount || 0), 0))} questions read from ${banks.length} files${pending.length ? `; ${pending.length} files still to read (${pending.reduce((n, s) => n + (s.doneChunks || 0), 0)} parts done)` : ''}.
+    ${pool.length ? `<b>${fmtN(pool.length)}</b> are waiting for their chapter: ${Object.entries(bySubj).map(([k, v]) => `${esc(k)} ${fmtN(v)}`).join(' · ')}. When you upload the course for one of these, its questions move into the new chapters automatically.` : ''}</p>
+    ${pending.length && aiReady() && !processing ? '<button class="btn small primary" id="bank-continue">Continue reading the question bank</button>' : ''}${processing ? '<span class="hint">Reading now — keep this page open. If you close it, it continues from where it stopped next time.</span>' : ''}</div>` : '');
+  const listed = [...mats, ...banks.filter((s) => !s.pool)];
+  const drive = banks.filter((s) => s.pool);
+  $('#src-list').innerHTML = bankBox + (listed.length ? `<div class="box">${listed.map(row).join('')}</div>` : '') +
+    (drive.length ? `<details class="box"><summary><b>Files from Google Drive</b> <span class="hint">(${drive.length})</span></summary>${drive.map(row).join('')}</details>` : '');
+  const bc = $('#bank-continue'); if (bc) bc.onclick = () => autoProcess();
   const orphans = GQ.filter((x) => !x.ch).length;
   $('#assign-orphans').hidden = !orphans || !aiReady();
   $('#assign-orphans').textContent = `Sort ${orphans} unassigned questions into chapters`;
@@ -1308,7 +1354,7 @@ onShow.podcast = renderPodcast;
    ===================================================================== */
 function renderSettings() {
   const s = getSettings();
-  $('#st-target').value = s.target; $('#st-batch').value = s.batch; $('#st-ctarget').value = s.cardTarget;
+  $('#st-target').value = s.target; $('#st-batch').value = s.batch; $('#st-ctarget').value = s.cardTarget; $('#st-autofill').checked = !!s.autoFill;
   $('#st-ai').textContent = !R.ready ? 'Connecting to Claude…'
     : aiReady() ? 'Claude is connected. AI work (splitting, sorting and writing questions, cards, summaries, podcasts) runs on your own Claude usage; Claude asks you once before the first request.'
     : R.db ? 'You can study everything here. Adding material needs edit access to this page.' : 'Open this page inside Claude, signed in, to use the AI features and the shared material.';
@@ -1318,7 +1364,7 @@ function renderSettings() {
   $('#st-wipe').hidden = !aiReady(); $('#st-imp').hidden = !aiReady();
 }
 $('#st-save').onclick = () => {
-  saveSettings({ ...getSettings(), target: Math.max(10, +$('#st-target').value || 100), batch: Math.min(30, Math.max(5, +$('#st-batch').value || 15)), cardTarget: Math.max(10, +$('#st-ctarget').value || 60) });
+  saveSettings({ ...getSettings(), target: Math.max(10, +$('#st-target').value || 100), batch: Math.min(30, Math.max(5, +$('#st-batch').value || 15)), cardTarget: Math.max(10, +$('#st-ctarget').value || 60), autoFill: $('#st-autofill').checked });
   toast('Settings saved.'); refreshAll();
 };
 $('#st-exp').onclick = async () => {

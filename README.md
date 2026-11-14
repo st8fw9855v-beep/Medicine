@@ -22,6 +22,15 @@ Aplicația **Semiologie Recall** conține un deck cu repetiție spațiată, 868 
 - **Progresul personal** la carduri și la grile rămâne al fiecăruia: se păstrează în browser și în contul lui.
 - **Deschisă în afara Claude**, de exemplu `index.html` local sau prin GitHub Pages, merge partea originală, fără funcțiile AI și fără materialul comun.
 
+## Banca de grile din Google Drive
+
+Grilele din anul III din folderul de Drive al cursului (Bioetică, Farmacologie, Fiziopatologie, Imunologie, Morfopatologie, Semiologie medicală și chirurgicală) sunt încărcate în pagină ca „bancă de grile”:
+- **Citirea:** pagina le citește cu Claude, pe contul proprietarului, la prima deschidere și continuă de unde a rămas dacă e închisă.
+- **Așteptarea pe materii:** grilele așteaptă în bancă, pe materii, până apare capitolul lor.
+- **Când încarci un curs:** după ce cursul e împărțit pe capitole, grilele potrivite din bancă trec automat în capitolele noi. Capitolele noi sunt apoi completate până la 100 de grile; poți dezactiva asta din Settings.
+
+Scriptul `tools/drive_import.py` refă importul pentru alt an sau alt folder.
+
 ## Structura
 
 ```
@@ -29,6 +38,7 @@ app/template.html    stilurile și structura paginii (aplicația originală + pa
 app/base-data.js     conținutul original: SECTIONS, CARDS, CASES, RECALL, CONTRASTS, EXPLAIN, GRILE, CHAPTERS, SOURCES
 app/app.js           logica: repetiție spațiată, grile, cazuri, recall, explicații, deck + surse, capitole, AI, sinteze, podcast
 build.py             construiește pagina
+tools/drive_import.py  pregătește băncile de grile dintr-un folder Google Drive
 dist/semiologie-recall.html   pagina publicată în Claude
 index.html           aceeași pagină ca document complet
 ```
