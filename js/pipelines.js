@@ -88,6 +88,7 @@ const SEGMENT_SCHEMA = {
         type: 'object',
         properties: {
           title: { type: 'string' },
+          existing: { type: 'string' },
           summary: { type: 'string' },
           topics: { type: 'array', items: { type: 'string' } },
           ranges: {
@@ -104,7 +105,7 @@ const SEGMENT_SCHEMA = {
             },
           },
         },
-        required: ['title', 'summary', 'topics', 'ranges'],
+        required: ['title', 'existing', 'summary', 'topics', 'ranges'],
         additionalProperties: false,
       },
     },
@@ -117,7 +118,7 @@ function numberedSource(src, idx) {
   return `<sursa id="${idx}" nume="${src.name}">\n` + src.blocks.map((b, i) => `[§${i}] ${b}`).join('\n') + `\n</sursa>`;
 }
 
-async function segmentGroup(group, { signal, onText, hint }) {
+async function segmentGroup(group, { signal, onText, hint, existing = [] }) {
   const body = group.map(({ src, idx }) => numberedSource(src, idx)).join('\n\n');
   const res = await callJSON({
     system:
@@ -128,9 +129,11 @@ async function segmentGroup(group, { signal, onText, hint }) {
       'Dacă mai multe surse tratează aceeași temă, pune-le în același capitol, cu câte un interval (range) pentru fiecare sursă. ' +
       'Intervalele sunt inclusive (fromBlock..toBlock) și trebuie să acopere tot conținutul util; ignoră cuprinsul, bibliografia și paginile goale. ' +
       'Titlurile, rezumatele și temele se scriu în limba română. ' +
-      '„topics" = 5-15 subteme concrete ale capitolului (folosite pentru a distribui grilele).',
+      '„topics" = 5-15 subteme concrete ale capitolului (folosite pentru a distribui grilele). ' +
+      'Aplicația are deja niște capitole (lista de mai jos, cu cheile lor). Dacă un capitol găsit corespunde unuia existent, pune cheia lui în „existing" (materialul i se atașează); altfel „existing" = "".',
     content: [
       { type: 'text', text: body },
+      { type: 'text', text: 'Capitole existente:\n' + (existing.length ? existing.map((c) => `- ${c.id}: ${c.title}`).join('\n') : '(niciunul)') },
       { type: 'text', text: 'Segmentează materia de mai sus pe capitole.' + (hint ? `\nIndicații de la student: ${hint}` : '') },
     ],
     schema: SEGMENT_SCHEMA,
@@ -142,7 +145,7 @@ async function segmentGroup(group, { signal, onText, hint }) {
   return res.chapters;
 }
 
-export async function segmentSources(materials, { signal, onStatus = () => {}, hint } = {}) {
+export async function segmentSources(materials, { signal, onStatus = () => {}, hint, existing = [] } = {}) {
   const indexed = materials.map((src, idx) => ({ src, idx }));
   // Grupăm sursele astfel încât fiecare apel să rămână bine sub fereastra de context.
   const LIMIT = 600000; // tokeni estimați per apel
@@ -163,13 +166,15 @@ export async function segmentSources(materials, { signal, onStatus = () => {}, h
     const res = await segmentGroup(groups[g], {
       signal,
       hint,
+      existing,
       onText: (n) => onStatus(`Analizez materia (${g + 1}/${groups.length})… ${n} caractere primite`),
     });
     for (const ch of res) {
       const ranges = ch.ranges
         .filter((r) => materials[r.source])
         .map((r) => ({ sourceId: materials[r.source].id, fromBlock: Math.min(r.fromBlock, r.toBlock), toBlock: Math.max(r.fromBlock, r.toBlock) }));
-      chapters.push({ id: uid('ch_'), order: chapters.length, title: ch.title, summary: ch.summary, topics: ch.topics, ranges });
+      const match = existing.find((c) => c.id === ch.existing);
+      chapters.push({ id: match ? match.id : uid('ch_'), existing: !!match, order: chapters.length, title: ch.title, summary: ch.summary, topics: ch.topics, ranges });
     }
   }
   return chapters;
