@@ -20,7 +20,6 @@ Ideile de învățare (repetiție spațiată, recall liber, cazuri amestecate, e
 8. **Explicații**: mecanismele din spatele semnelor, pe secțiuni.
 9. **Sinteze**: pentru fiecare capitol se generează o sinteză completă de examen, cu noțiuni-cheie, clasificări, tabele comparative, cifre de reținut, mnemotehnici, capcanele frecvente la grile și întrebări de autoevaluare. Sinteza se poate descărca în format .md sau printa ca PDF.
 10. **Podcast**: un dialog scurt de 3–12 minute între doi prezentatori, despre ce trebuie ținut minte din capitol. E citit cu vocea sintetică a browserului, iar scenariul se poate descărca.
-
 11. **Metodă**: ghidul de studiu (bucla pre-test → citire → recall → carduri → mecanism → repetiție → cazuri amestecate) și regulile pentru carduri.
 
 ## Cum se folosește
