@@ -130,6 +130,9 @@ a{color:var(--pulse)}
 @media (prefers-reduced-motion:no-preference){.card{transition:border-color .2s}}
 
 /* Additions */
+.chap .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.chap .acts select{padding:5px 6px;font-size:13px}
+.chap .acts .sep{width:1px;height:22px;background:var(--line);margin:0 2px}
 .subjects{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px}
 .subjects button{font:600 13px var(--f-body);border:1px solid var(--line);background:var(--paper);color:var(--muted);border-radius:99px;padding:6px 12px;cursor:pointer}
 .subjects button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
@@ -201,12 +204,12 @@ select optgroup{font-style:normal;font-weight:700}
       <g fill="var(--accent)"><circle cx="120" cy="18" r="3"/><circle cx="280" cy="10" r="3"/><circle cx="440" cy="36" r="3"/><circle cx="600" cy="42" r="3"/><circle cx="760" cy="46" r="3"/></g>
     </svg>
     <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="review" aria-selected="true">Repetiție</button>
+      <button role="tab" data-tab="sources" aria-selected="true">Documente</button>
+      <button role="tab" data-tab="review" aria-selected="false">Repetiție</button>
       <button role="tab" data-tab="grile" aria-selected="false">Grile</button>
       <button role="tab" data-tab="cases" aria-selected="false">Cazuri</button>
       <button role="tab" data-tab="summaries" aria-selected="false">Sinteze</button>
       <button role="tab" data-tab="podcast" aria-selected="false">Podcast</button>
-      <button role="tab" data-tab="sources" aria-selected="false">Curs</button>
       <button role="tab" data-tab="settings" aria-selected="false" aria-label="Setări" title="Setări">⚙</button>
     </nav>
   </div>
@@ -214,7 +217,7 @@ select optgroup{font-style:normal;font-weight:700}
 
 <main class="wrap">
   <!-- REVIEW -->
-  <section class="panel" id="tab-review">
+  <section class="panel" id="tab-review" hidden>
     <div class="stats">
       <div class="stat due"><b id="st-due">0</b><span>De repetat acum</span></div>
       <div class="stat new"><b id="st-new">0</b><span>Noi azi</span></div>
@@ -227,7 +230,6 @@ select optgroup{font-style:normal;font-weight:700}
       <button class="btn primary" id="start">Începe sesiunea</button>
     </div>
     <div id="session"></div>
-    <div class="controls" style="margin-top:14px"><select id="cards-ch" aria-label="Capitol"></select><button class="btn" id="cards-gen" data-ai>Scrie carduri pentru acest capitol</button><span class="hint" id="cards-info"></span></div>
     <div class="sync" id="sync">Progres: salvat în acest browser</div>
     <p class="hint" style="margin-top:12px">Taste: <b>Spațiu</b> arată răspunsul, <b>1–4</b> îl notează. Răspunde înainte să întorci cardul.</p>
   </section>
@@ -261,7 +263,7 @@ select optgroup{font-style:normal;font-weight:700}
   <section class="panel" id="tab-cases" hidden>
     <h2>Cazuri clinice</h2>
     <p class="hint">Amestecate din toate capitolele. Alege un răspuns înainte să citești explicația. <span class="score" id="case-score"></span></p>
-    <div class="controls"><select id="case-ch" aria-label="Capitol"></select><button class="btn" id="case-shuffle">Amestecă din nou</button><button class="btn" id="case-gen" data-ai>Scrie 10 cazuri noi pentru acest capitol</button></div>
+    <div class="controls"><select id="case-ch" aria-label="Capitol"></select><button class="btn" id="case-shuffle">Amestecă din nou</button></div>
     <div id="cases"></div>
   </section>
 
@@ -271,14 +273,14 @@ select optgroup{font-style:normal;font-weight:700}
 
   
   <!-- SOURCES & CHAPTERS -->
-  <section class="panel" id="tab-sources" hidden>
-    <h2>Curs</h2>
-    <p class="hint" id="src-intro">Încarcă cursul și băncile de grile ale materiei (PDF, Word, text, poze). Cursul e împărțit pe capitole, grilele potrivite din bancă intră în ele, iar grile noi sunt scrise până când fiecare capitol are <b id="target-label">100</b>.</p>
+  <section class="panel" id="tab-sources">
+    <h2>Documentele mele</h2>
+    <p class="hint">Încarcă documentele tale pentru materia aleasă: cursul (carte, cursuri, LP-uri, notițe) și, dacă vrei, grilele tale. Cursul se împarte pe capitole. Pentru fiecare capitol, aplicația alege din bancă doar grilele, cardurile și cazurile care corespund, iar la cerere generează altele, plus sinteza și podcastul.</p>
     <div id="src-access"></div>
     <div class="box" id="upload-box">
       <div class="controls" style="margin-bottom:10px">
         <span class="hint">Ce încarci:</span>
-        <div class="seg" id="up-kind"><button data-k="material" class="on">📘 Curs</button><button data-k="grile">📝 Bancă de grile</button></div>
+        <div class="seg" id="up-kind"><button data-k="material" class="on">📘 Curs</button><button data-k="grile">📝 Grilele mele</button></div>
       </div>
       <div class="drop" id="drop" tabindex="0" role="button">Trage fișierele aici sau <u>apasă pentru a alege</u><br><span class="hint">PDF · DOCX · TXT/MD · HTML · JPG/PNG — poți alege mai multe deodată</span></div>
       <input type="file" id="file" multiple hidden accept=".pdf,.docx,.txt,.md,.html,.htm,.csv,.png,.jpg,.jpeg,.webp">
@@ -289,12 +291,6 @@ select optgroup{font-style:normal;font-weight:700}
       </details>
     </div>
     <div id="src-list"></div>
-    <h3>Capitole</h3>
-    <div class="controls">
-      <input type="search" id="seg-hint" placeholder="Indicație opțională pentru împărțire (ex. după cursurile 1–14)" style="flex:1;min-width:200px">
-      <button class="btn primary" id="seg" data-ai>Împarte cursul nou pe capitole</button>
-    </div>
-    <div class="controls"><button class="btn" id="fill-all" data-ai>Completează toate capitolele până la țintă</button><button class="btn" id="assign-orphans" data-ai hidden>Sortează pe capitole grilele din bancă</button></div>
     <div id="ch-list"></div>
   </section>
 
@@ -322,22 +318,22 @@ select optgroup{font-style:normal;font-weight:700}
     <h2>Setări</h2>
     <div class="box">
       <p class="hint" id="st-ai"></p>
-      <div class="controls">
-        <label class="inline">Grile pe capitol (țintă) <input type="number" id="st-target" min="10" max="1000"></label>
-        <label class="inline">Grile per apel AI <input type="number" id="st-batch" min="5" max="40"></label>
-        <label class="inline">Carduri pe capitol (țintă) <input type="number" id="st-ctarget" min="10" max="500"></label>
-        <label class="inline">Pagini pe capitol (cursuri fără capitole proprii) <input type="number" id="st-pages" min="10" max="300"></label>
-      </div>
-      <label class="inline" style="margin-bottom:12px"><input type="checkbox" id="st-autofill"> Când un curs nou e împărțit pe capitole, completează automat capitolele noi până la țintă</label>
+      <div class="controls"><label class="inline">Pagini pe capitol (cursuri fără capitole proprii) <input type="number" id="st-pages" min="10" max="300"></label></div>
       <button class="btn primary" id="st-save">Salvează</button>
     </div>
     <div class="box">
-      <b>Date</b>
-      <p class="hint">Sursele, capitolele, grilele, cardurile, sintezele și podcasturile adăugate aici sunt comune pentru toți cei care deschid pagina. Progresul tău la repetiție este doar al tău.</p>
+      <b>Datele mele</b>
+      <p class="hint" id="st-store"></p>
       <p class="hint" id="st-counts"></p>
-      <div class="controls"><button class="btn primary" id="st-share">Versiune pentru LiveSend (HTML)</button><button class="btn" id="st-exp">Exportă backup (.json)</button><button class="btn" id="st-imp">Importă backup</button><button class="btn" id="st-wipe">Șterge tot ce s-a adăugat</button></div>
+      <div class="controls"><button class="btn primary" id="st-share">Versiune pentru LiveSend (HTML)</button><button class="btn" id="st-exp">Exportă backup (.json)</button><button class="btn" id="st-imp">Importă backup</button><button class="btn danger" id="st-wipe">Șterge datele mele</button></div>
       <input type="file" id="st-file" accept=".json" hidden>
-      <p class="hint" id="st-share-hint">„Versiune pentru LiveSend” salvează un singur fișier HTML cu tot conținutul de acum (capitole, grile, carduri, cazuri, sinteze, podcasturi). Îl poți încărca pe livesend.io sau trimite colegilor. Acolo se poate învăța tot, dar fără funcțiile AI și fără adăugare de material.</p>
+      <p class="hint" id="st-share-hint">„Versiune pentru LiveSend” salvează un singur fișier HTML cu capitolele tale și tot ce ai ales sau generat (grile, carduri, cazuri, sinteze, podcasturi). Îl poți încărca pe livesend.io sau trimite colegilor; acolo se poate învăța, fără funcțiile AI.</p>
+    </div>
+    <div class="box" id="bank-admin" hidden>
+      <b>Banca comună de grile</b> <span class="hint">(doar proprietarul paginii)</span>
+      <div id="bank-status" class="hint" style="margin:6px 0"></div>
+      <div class="controls"><button class="btn" id="bank-upload">Adaugă fișiere de grile în bancă</button><button class="btn" id="bank-continue">Continuă citirea băncii</button></div>
+      <input type="file" id="bank-file" multiple hidden accept=".pdf,.docx,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.webp">
     </div>
   </section>
 

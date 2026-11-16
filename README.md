@@ -1,56 +1,44 @@
 # Semiologie Recall+
 
-Aplicația **Semiologie Recall** conține un deck cu repetiție spațiată, 868 de grile cu chei verificate față de cursul din 2022, cazuri clinice amestecate, fișe de recall, tabele de contrast și explicații de mecanism. Această versiune o extinde și o face o pagină pe care o deschizi și o trimiți colegilor printr-un link.
+Aplicație de recapitulare pentru anul III de Medicină, pe materii: Semiologie medicală, Semiologie chirurgicală, Fiziopatologie, Farmacologie și Anatomie patologică. Pornește de la aplicația Semiologie Recall.
 
-## Ce conține
+## Cum funcționează
 
-- **Materii**: Semiologie medicală, Semiologie chirurgicală, Fiziopatologie, Farmacologie și Anatomie patologică (Morfopatologie). Materia se alege din bara de sus, iar fiecare tab arată doar conținutul ei. Conținutul original Semiologie Recall face parte din Semiologie medicală.
-- **Review**: carduri cu repetiție spațiată (Space, apoi 1–4), plus un buton care scrie carduri noi pentru capitolul ales.
-- **Questions**: exersare cu feedback după fiecare grilă sau simulare de examen. Filtrele: capitol, sursă, CS/CM, greșelile mele, chei corectate.
-- **Cases**: cazuri clinice amestecate.
-- **Summaries**: o sinteză de examen pentru fiecare capitol.
-- **Podcast**: un dialog scurt despre ce trebuie ținut minte, citit cu voci Claude.
-- **Course**: încarci cursul și băncile de grile ale materiei.
-  - Cursul e împărțit pe capitole.
-  - Grilele potrivite din bancă trec în capitolele noi.
-  - **Fill to 100** scrie grile noi până la cel puțin 100 pe capitol.
-  - **Check keys** verifică cheile față de curs.
-  - **⚡ Prepare everything** face toți pașii pentru un capitol.
-- **⚙**: țintele (grile și carduri pe capitol), completarea automată și backup-ul.
+1. **Documente** (primul tab): fiecare persoană își încarcă documentele pentru materia aleasă.
+   - **Cursul**: carte, cursuri, LP-uri sau notițe, în format PDF (inclusiv scanat), Word, text sau poze.
+   - **Grilele proprii**: opțional.
+2. **Capitole**: cursul se împarte pe capitole. O carte cu capitole proprii păstrează capitolele cărții; un curs fără capitole (LP-uri, notițe) e grupat în capitole de ~50 de pagini, valoare care se schimbă din ⚙.
+3. **Banca**: pentru fiecare capitol, aplicația alege din banca comună **doar** grilele, cardurile și cazurile care corespund documentului încărcat. Butonul „Caută din nou în bancă” repetă căutarea.
+4. **Generare la cerere**: la fiecare capitol, butoanele „+ Grile”, „+ Carduri” și „+ Cazuri” (10, 20 sau 50) generează din documentul persoanei. Tot la cerere se fac „Sinteză”, „Podcast” și „Verifică cheile”, care verifică grilele alese față de cursul persoanei. Nimic nu se generează automat.
+5. **Învățare**:
+   - **Repetiție**: carduri cu repetiție spațiată;
+   - **Grile**: exersare sau simulare de examen;
+   - **Cazuri**: cazuri clinice;
+   - **Sinteze** și **Podcast**: cu voci Claude.
 
-## Cum funcționează ca pagină Claude
+## Date
 
-- **Fără cheie API**: funcțiile AI folosesc contul Claude al celui care apasă butonul. Claude cere o singură dată permisiunea.
-- **Conținut comun**: tot ce se adaugă (surse, capitole, grile, carduri, sinteze, podcasturi) e salvat în pagină și e văzut de toți colegii care o deschid, autentificați în Claude.
-- **Cine poate adăuga material**: proprietarul și cei cu acces de Contributor sau mai mare. Colegii cu acces de vizualizare învață din tot ce s-a adăugat.
-- **Progresul personal** la carduri și la grile rămâne al fiecăruia: se păstrează în browser și în contul lui.
-- **Deschisă în afara Claude**, de exemplu `index.html` local sau prin GitHub Pages, merge partea originală, fără funcțiile AI și fără materialul comun.
+- **Banca comună** (doar citire pentru toți, modificabilă doar de proprietar): cele 868 de grile, 295 de carduri și 36 de cazuri originale Semiologie Recall, plus grilele din Google Drive (anul III). Proprietarul adaugă fișiere în bancă din ⚙.
+- **Datele fiecărei persoane sunt private**: documentele, capitolele, ce s-a ales din bancă, ce s-a generat și progresul.
+  - Cu acces de Contributor sau mai mare, datele se salvează în contul persoanei.
+  - Altfel, datele rămân în browserul persoanei.
+- **AI**: funcțiile AI rulează pe contul Claude al persoanei care apasă butonul, fără cheie API.
+- **LiveSend**: din ⚙, „Versiune pentru LiveSend (HTML)” salvează un fișier cu capitolele persoanei și tot ce a ales sau generat. Fișierul se poate pune pe livesend.io; acolo se poate învăța, dar fără funcțiile AI.
 
 ## Banca de grile din Google Drive
 
-Grilele din anul III din folderul de Drive al cursului (Farmacologie, Fiziopatologie, Morfopatologie, Semiologie medicală și chirurgicală) sunt încărcate în pagină ca „bancă de grile”:
-- **Citirea:** pagina le citește cu Claude, pe contul proprietarului, la prima deschidere și continuă de unde a rămas dacă e închisă.
-- **Așteptarea pe materii:** grilele așteaptă în bancă, pe materii, până apare capitolul lor.
-- **Când încarci un curs:** după ce cursul e împărțit pe capitole, grilele potrivite din bancă trec automat în capitolele noi. Capitolele noi sunt apoi completate până la 100 de grile; poți dezactiva asta din Settings.
-
-Scriptul `tools/drive_import.py` refă importul pentru alt an sau alt folder.
-
-## Partajare prin LiveSend
-
-În ⚙, butonul **Versiune pentru LiveSend (HTML)** salvează un singur fișier HTML cu tot conținutul de acum: capitole, grile, carduri, cazuri, sinteze și podcasturi. Fișierul se încarcă în panoul livesend.io și se trimite colegilor ca link. Acolo se poate învăța tot, dar fără funcțiile AI și fără adăugare de material. Progresul nu se păstrează între vizite, din cauza izolării paginilor LiveSend. Când adaugi conținut nou, generezi din nou fișierul și îl înlocuiești pe LiveSend.
-
-Același fișier se poate construi și din linia de comandă, dintr-un export al stocării comune: `python3 build.py DOSAR_EXPORT`.
+`tools/drive_import.py` pregătește băncile de grile dintr-un folder Drive (Farmacologie, Fiziopatologie, Morfopatologie, Semiologie medicală și chirurgicală). Pagina le citește cu Claude, pe contul proprietarului, la prima deschidere, și continuă de unde a rămas.
 
 ## Structura
 
 ```
-app/template.html    stilurile și structura paginii (aplicația originală + panourile noi)
-app/base-data.js     conținutul original: SECTIONS, CARDS, CASES, RECALL, CONTRASTS, EXPLAIN, GRILE, CHAPTERS, SOURCES
-app/app.js           logica: repetiție spațiată, grile, cazuri, recall, explicații, deck + surse, capitole, AI, sinteze, podcast
+app/template.html    stilurile și structura paginii
+app/base-data.js     conținutul original Semiologie Recall: SECTIONS, CARDS, CASES, RECALL, CONTRASTS, EXPLAIN, GRILE, CHAPTERS, SOURCES
+app/app.js           aplicația: documente, capitole, bancă, generare la cerere, repetiție, grile, cazuri, sinteze, podcast
 build.py             construiește pagina
 tools/drive_import.py  pregătește băncile de grile dintr-un folder Google Drive
 dist/semiologie-recall.html   pagina publicată în Claude
 index.html           aceeași pagină ca document complet
 ```
 
-Comanda `python3 build.py` reconstruiește pagina după orice modificare în `app/`. Librăriile (pdf.js 3.11.174, mammoth 1.6.0, marked 12.0.2, DOMPurify 3.1.6) se încarcă de pe cdn.jsdelivr.net.
+Comanda `python3 build.py` reconstruiește pagina după orice modificare în `app/`.

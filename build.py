@@ -21,17 +21,4 @@ full = ('<!doctype html><html lang="ro"><head><meta charset="utf-8">'
 (root / 'index.html').write_text(full, encoding='utf-8')
 print(f'dist/semiologie-recall.html: {len(page.encode()) / 1024:.0f} KiB')
 
-# Versiunea de partajare (LiveSend) dintr-un export al stocării comune: python3 build.py DUMP_DIR
-import json, sys, datetime
-if len(sys.argv) > 1:
-    dump = Path(sys.argv[1])
-    def coll(name):
-        d = dump / name
-        return [{'id': f.stem, **json.loads(f.read_text(encoding='utf-8'))} for f in sorted(d.glob('*.json'))] if d.exists() else []
-    snap = {'date': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'user': {'sources': coll('sources'), 'chapters': coll('chapters'), 'grilePacks': coll('grile'), 'cardPacks': coll('cards'), 'outputs': coll('outputs')}}
-    js = json.dumps(snap, ensure_ascii=False).replace('<', '\\u003c')
-    share = full.replace('<script id="base-data">', f'<script>window.SNAPSHOT={js};</script>\n<script id="base-data">', 1)
-    (root / 'dist/semiologie-recall-livesend.html').write_text(share, encoding='utf-8')
-    n = sum(len(p.get('items', [])) for p in snap['user']['grilePacks'])
-    print(f'dist/semiologie-recall-livesend.html: {len(share.encode()) / 1024:.0f} KiB, {len(snap["user"]["chapters"])} chapters, {n} added questions')
+# Versiunea pentru LiveSend se face din aplicație (⚙ → „Versiune pentru LiveSend”), din datele fiecărei persoane.
