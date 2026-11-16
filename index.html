@@ -327,6 +327,7 @@ select optgroup{font-style:normal;font-weight:700}
         <label class="inline">Grile pe capitol (țintă) <input type="number" id="st-target" min="10" max="1000"></label>
         <label class="inline">Grile per apel AI <input type="number" id="st-batch" min="5" max="40"></label>
         <label class="inline">Carduri pe capitol (țintă) <input type="number" id="st-ctarget" min="10" max="500"></label>
+        <label class="inline">Pagini pe capitol (cursuri fără capitole proprii) <input type="number" id="st-pages" min="10" max="300"></label>
       </div>
       <label class="inline" style="margin-bottom:12px"><input type="checkbox" id="st-autofill"> Când un curs nou e împărțit pe capitole, completează automat capitolele noi până la țintă</label>
       <button class="btn primary" id="st-save">Salvează</button>
@@ -836,7 +837,7 @@ let CUR = (() => { try { const v = localStorage.getItem('semio-subject'); return
    Setări locale (per persoană)
    ===================================================================== */
 const SET_KEY = 'semio-plus-settings';
-const DEFAULTS = { target: 100, batch: 15, cardTarget: 60, podcastMinutes: 5, autoFill: true };
+const DEFAULTS = { target: 100, batch: 15, cardTarget: 60, podcastMinutes: 5, autoFill: true, pagesPerChapter: 50 };
 function getSettings() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SET_KEY) || '{}') }; } catch (e) { return { ...DEFAULTS }; } }
 function saveSettings(s) { try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
 
@@ -1517,11 +1518,19 @@ async function segmentNew(job, mats) {
       job.status(`Împart „${src.name}” pe capitole (${gi + 1}/${groups.length})…`);
       const ids = groups[gi];
       const sj = srcSubj(src) || CUR;
-      const existing = CH_ORDER.filter((id) => chSubj(id) === sj).map((id) => `- ${id}: ${CHAPTERS[id]}${topicsOf(id).length ? ' (' + topicsOf(id).slice(0, 8).join('; ') + ')' : ''}`).join('\n');
+      // Mărimea unei pagini: din numărul de pagini al PDF-ului, altfel ~2.200 de caractere.
+      const perPage = src.pages ? Math.max(800, src.chars / src.pages) : 2200;
+      const pagesOf = (id) => Math.round((chMeta(id)?.ranges || []).filter((r) => r.sourceId === src.id).reduce((n, r) => n + blocks.slice(r.fromBlock, r.toBlock + 1).join('').length, 0) / perPage);
+      const want = getSettings().pagesPerChapter || 50;
+      const blocksPerChapter = Math.round((want * perPage) / Math.max(1, src.chars / Math.max(1, blocks.length)));
+      const existing = CH_ORDER.filter((id) => chSubj(id) === sj).map((id) => `- ${id}: ${CHAPTERS[id]}${pagesOf(id) ? ` [~${pagesOf(id)} pagini din această sursă]` : ''}${topicsOf(id).length ? ' (' + topicsOf(id).slice(0, 8).join('; ') + ')' : ''}`).join('\n');
       const res = await askJSON(
         `Ești profesor universitar de medicină și organizezi materia de examen la ${SUBJ_BY[sj].label}. Mai jos e un fragment dintr-o sursă de curs, împărțit în blocuri numerotate [§n].\n` +
-        'Împarte fragmentul în capitole de studiu coerente, în ordinea predării. Un capitol trebuie să fie suficient de bogat pentru ~100 de grile (de regulă un capitol/curs din material); nu fragmenta excesiv.\n' +
-        'Aplicația are deja capitolele de mai jos. Dacă o parte din fragment ține de un capitol existent (inclusiv continuarea unui capitol început într-un fragment anterior), pune cheia lui în "existing"; altfel "existing" = "".\n' +
+        'Împarte fragmentul în capitole de studiu, în ordinea din material, după această regulă:\n' +
+        '• Dacă sursa este o CARTE/un tratat cu capitole proprii (Capitolul I, II…), un capitol de aici = un capitol al cărții, oricât de lung ar fi; subcapitolele NU devin capitole separate (pune-le în "topics"). Folosește titlul capitolului din carte.\n' +
+        `• Altfel (lucrări practice, cursuri separate, notițe), grupează unitățile consecutive și înrudite în capitole de aproximativ ${want} de pagini (~${blocksPerChapter} blocuri); nu face un capitol pentru fiecare lucrare practică. Titlul capitolului rezumă tema grupului.\n` +
+        'Nu inventa numerotări de capitole care nu există în sursă.\n' +
+        'Aplicația are deja capitolele de mai jos. Dacă o parte din fragment ține de un capitol existent (inclusiv continuarea unui capitol de carte sau a unui grup început într-un fragment anterior, dacă grupul nu a atins încă mărimea dorită), pune cheia lui în "existing"; altfel "existing" = "".\n' +
         'Intervalele sunt inclusive și folosesc numerele blocurilor; acoperă tot conținutul util, ignoră cuprinsul și bibliografia. Titlurile, rezumatele și subtemele în limba română; "topics" = 5-15 subteme concrete.\n' +
         (($('#seg-hint').value || '').trim() ? `Indicații de la student: ${$('#seg-hint').value.trim()}\n` : '') +
         `\nCAPITOLE EXISTENTE:\n${existing}\n\nRăspunde doar cu JSON: {"chapters":[{"title":"…","existing":"cheie sau \\"\\"","summary":"1-2 fraze","topics":["…"],"fromBlock":n,"toBlock":n}]}\n\n` +
@@ -1785,12 +1794,13 @@ function addFiles(files, kind) {
   for (const file of files) {
     runJob(`Citesc „${file.name}”`, async (job) => {
       const fk = fileKind(file);
-      let text = '', transcribed = false;
+      let text = '', transcribed = false, pages = 0;
       if (fk === 'image') { text = await transcribe([file], job, file.name); transcribed = true; }
       else {
         job.status('Extrag textul…');
         const r = await extractText(file, (f) => job.progress(f));
         text = r.text.trim();
+        if (fk === 'pdf') pages = r.pages;
         if (fk === 'pdf' && text.length < (r.pages || 1) * 150) {
           if (r.pages > 60) throw new Error(`PDF-ul pare scanat (${r.pages} pagini). Împarte-l în părți de cel mult 60 de pagini sau folosește un PDF cu text selectabil.`);
           job.status('PDF scanat: pregătesc paginile…');
@@ -1799,7 +1809,7 @@ function addFiles(files, kind) {
       }
       if (!text) throw new Error('Nu am găsit text în fișier.');
       job.progress(null);
-      await saveSource(file.name, kind, text, transcribed ? { transcribed: true } : {}, job);
+      await saveSource(file.name, kind, text, { ...(transcribed ? { transcribed: true } : {}), ...(pages ? { pages } : {}) }, job);
       return `Adăugat: ${fmtN(text.length)} caractere${transcribed ? ' (transcris de Claude)' : ''}.`;
     }, 'upload').then(autoProcess);
   }
@@ -2111,7 +2121,7 @@ onShow.podcast = renderPodcast;
    ===================================================================== */
 function renderSettings() {
   const s = getSettings();
-  $('#st-target').value = s.target; $('#st-batch').value = s.batch; $('#st-ctarget').value = s.cardTarget; $('#st-autofill').checked = !!s.autoFill;
+  $('#st-target').value = s.target; $('#st-batch').value = s.batch; $('#st-ctarget').value = s.cardTarget; $('#st-autofill').checked = !!s.autoFill; $('#st-pages').value = s.pagesPerChapter;
   $('#st-ai').textContent = !R.ready ? 'Mă conectez la Claude…'
     : aiReady() ? 'Claude e conectat. Munca AI (împărțirea, sortarea și scrierea grilelor, cardurile, sintezele, podcasturile) consumă din utilizarea ta Claude; Claude te întreabă o dată înainte de prima cerere.'
     : R.db ? 'Poți învăța tot ce e aici. Pentru a adăuga material e nevoie de drept de editare.' : 'Deschide pagina în Claude, autentificat, ca să folosești funcțiile AI și materialul comun.';
@@ -2122,7 +2132,7 @@ function renderSettings() {
   $('#st-share').hidden = $('#st-share-hint').hidden = !R.db;
 }
 $('#st-save').onclick = () => {
-  saveSettings({ ...getSettings(), target: Math.max(10, +$('#st-target').value || 100), batch: Math.min(30, Math.max(5, +$('#st-batch').value || 15)), cardTarget: Math.max(10, +$('#st-ctarget').value || 60), autoFill: $('#st-autofill').checked });
+  saveSettings({ ...getSettings(), target: Math.max(10, +$('#st-target').value || 100), batch: Math.min(30, Math.max(5, +$('#st-batch').value || 15)), cardTarget: Math.max(10, +$('#st-ctarget').value || 60), autoFill: $('#st-autofill').checked, pagesPerChapter: Math.min(300, Math.max(10, +$('#st-pages').value || 50)) });
   toast('Setări salvate.'); refreshAll();
 };
 // Un singur fișier HTML cu tot conținutul de acum, pentru LiveSend sau pentru colegi (fără AI).
