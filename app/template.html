@@ -130,6 +130,10 @@ a{color:var(--pulse)}
 @media (prefers-reduced-motion:no-preference){.card{transition:border-color .2s}}
 
 /* Additions */
+.subjects{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px}
+.subjects button{font:600 13px var(--f-body);border:1px solid var(--line);background:var(--paper);color:var(--muted);border-radius:99px;padding:6px 12px;cursor:pointer}
+.subjects button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.subjects button small{font:500 11px var(--f-mono);opacity:.75;margin-left:4px}
 
 .box{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px}
 .btn.small{font-size:13px;padding:5px 10px}
@@ -188,30 +192,26 @@ select optgroup{font-style:normal;font-weight:700}
 </style>
 <header class="chart">
   <div class="wrap">
-    <div class="eyebrow" id="eyebrow">Semiologie medicală · Vol. I · Cap. I complet, p. 7–76</div>
-    <h1>Semiologie <em>Recall</em></h1>
-    <p class="sub" id="subtitle">A spaced-repetition deck, mixed clinical cases, recall sheets and mechanism explanations, plus exam questions (grile) for every chapter, with keys checked against the course. Upload more material and question banks in Sources &amp; chapters.</p>
+    <div class="eyebrow">Medicină · Anul III</div>
+    <h1><span id="subj-name">Semiologie medicală</span> <em>Recall</em></h1>
+    <p class="sub" id="subtitle"></p>
+    <div class="subjects" id="subjects" role="tablist" aria-label="Subject"></div>
     <svg class="curve" viewBox="0 0 800 56" preserveAspectRatio="none" aria-hidden="true">
       <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="0,40 40,30 80,34 120,18 160,26 200,12 240,22 280,10 320,20 360,30 400,24 440,36 480,28 520,38 560,32 600,42 640,36 680,44 720,40 760,46 800,44"/>
       <g fill="var(--accent)"><circle cx="120" cy="18" r="3"/><circle cx="280" cy="10" r="3"/><circle cx="440" cy="36" r="3"/><circle cx="600" cy="42" r="3"/><circle cx="760" cy="46" r="3"/></g>
     </svg>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="review" aria-selected="true">Review</button>
-      <button role="tab" data-tab="grile" aria-selected="false">Exam questions</button>
-      <button role="tab" data-tab="sources" aria-selected="false">Sources &amp; chapters</button>
-      <button role="tab" data-tab="summaries" aria-selected="false">Exam summaries</button>
-      <button role="tab" data-tab="podcast" aria-selected="false">Podcast</button>
-      <button role="tab" data-tab="method" aria-selected="false">Method</button>
+      <button role="tab" data-tab="grile" aria-selected="false">Questions</button>
       <button role="tab" data-tab="cases" aria-selected="false">Cases</button>
-      <button role="tab" data-tab="recall" aria-selected="false">Recall &amp; contrasts</button>
-      <button role="tab" data-tab="explain" aria-selected="false">Explanations</button>
-      <button role="tab" data-tab="deck" aria-selected="false">Deck</button>
-      <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+      <button role="tab" data-tab="summaries" aria-selected="false">Summaries</button>
+      <button role="tab" data-tab="podcast" aria-selected="false">Podcast</button>
+      <button role="tab" data-tab="sources" aria-selected="false">Course</button>
+      <button role="tab" data-tab="settings" aria-selected="false" aria-label="Settings" title="Settings">⚙</button>
     </nav>
   </div>
 </header>
 
-<main class="wrap">
 <main class="wrap">
   <!-- REVIEW -->
   <section class="panel" id="tab-review">
@@ -229,13 +229,13 @@ select optgroup{font-style:normal;font-weight:700}
     <div id="session"></div>
     <div class="controls" style="margin-top:14px"><select id="cards-ch" aria-label="Chapter"></select><button class="btn" id="cards-gen" data-ai>Write cards for this chapter</button><span class="hint" id="cards-info"></span></div>
     <div class="sync" id="sync">Progress: saved in this browser</div>
-    <p class="hint" style="margin-top:12px">Keys: <b>Space</b> shows the answer, then <b>1–4</b> grades it. Say or write your answer before you reveal it. Recognising it on the screen doesn't count.</p>
+    <p class="hint" style="margin-top:12px">Keys: <b>Space</b> shows the answer, <b>1–4</b> grades it. Answer before you reveal.</p>
   </section>
 
   <!-- GRILE -->
   <section class="panel" id="tab-grile" hidden>
-    <h2>Exam questions (grile)</h2>
-    <p>These are all the questions from your files, with duplicates removed, plus questions written in the same style from your course (the original 130 for Chapter I and any you generate in Sources &amp; chapters). <b>Complement simplu</b> has one correct answer; <b>complement multiplu</b> has 2–5. Where a key in your material contradicts the course, the course wins and the question says so.</p>
+    <h2>Questions</h2>
+    <p class="hint"><b>Complement simplu</b>: 1 answer · <b>complement multiplu</b>: 2–5. Where a key contradicts the course, the course wins and the question says so.</p>
     <div class="gstats" id="g-stats"></div>
     <div class="controls">
       <select id="g-ch" aria-label="Chapter"></select>
@@ -255,105 +255,25 @@ select optgroup{font-style:normal;font-weight:700}
     <div id="gq"></div>
   </section>
 
-  <!-- METHOD -->
-  <section class="panel" id="tab-method" hidden>
-    <h2>How to make it stick</h2>
-    <p>The research on durable learning keeps landing on two techniques: <b>retrieval practice</b> (pulling information out of memory) and <b>spaced practice</b> (coming back to it over increasing gaps). Re-reading and highlighting feel productive but rank low for long-term retention. Semiologie is mostly lists of signs, their causes, and pairs you have to tell apart, which suits these methods well.</p>
-
-    <h3>The session loop (use it for every new subchapter)</h3>
-    <ol class="loop">
-      <li><span class="n">1</span><div><b>Pre-test</b><span class="t">2 min</span><br>Before reading, look at the subchapter heading and write what you think is in it. Guessing wrong first still improves what you remember afterwards.</div></li>
-      <li><span class="n">2</span><div><b>Read one chunk with a question</b><span class="t">5–8 pages</span><br>Read actively. For every sign, ask "what would make me suspect this, and what else looks like it?" Don't highlight.</div></li>
-      <li><span class="n">3</span><div><b>Close the book and blurt</b><span class="t">5–10 min</span><br>On a blank page, write or say aloud everything you remember from the chunk. Then open the book and mark what you missed in red. The red items are what you study next. Use the Recall tab for this.</div></li>
-      <li><span class="n">4</span><div><b>Turn gaps into cards</b><span class="t">5 min</span><br>One fact per card. Keep each card asking for one thing ("Weber in transmission deafness → ?") rather than a whole list. Long lists become several cards or a cloze.</div></li>
-      <li><span class="n">5</span><div><b>Explain the mechanism</b><span class="t">while you write cards</span><br>Tie each sign to its cause: why does central cyanoza from lung failure correct with O₂ but cyanogenic heart disease doesn't? A fact attached to a reason is much harder to lose.</div></li>
-      <li><span class="n">6</span><div><b>Review on schedule</b><span class="t">20–30 min/day</span><br>The deck schedules each card at roughly 1 → 3 → 7 → 16 → 35+ days, stretching the gap each time you get it right. Do the reviews before you read anything new.</div></li>
-      <li><span class="n">7</span><div><b>Mix, don't block</b><span class="t">2–3×/week</span><br>Use mixed clinical cases (Cases tab) that jump between fever, facies, eyes and consciousness. Mixing forces you to choose which concept applies, and that choice is what the exam and the ward test.</div></li>
-      <li><span class="n">8</span><div><b>Draw it, do it, teach it</b><span class="t">weekly</span><br>Sketch the 10 fever curves and the 3 coma postures from memory. Do Rinne/Weber, the visual field exam and the thyroid palpation on a colleague. Once a week, explain one subchapter out loud as if teaching a year-I student, without notes.</div></li>
-    </ol>
-
-    <h3>For Chapter I (p. 7–76)</h3>
-    <ul class="plain">
-      <li><b>Daily:</b> introduce 25–30 new cards a day. The deck has <span id="card-count">all</span> cards, so all of them are in rotation in about 10 days. If you have an exam soon, raise the limit to 40–50.</li>
-      <li><b>After each section's cards:</b> read its page in the Explanations tab. Understanding the mechanism makes the next review easier.</li>
-      <li><b>Day 1:</b> do the blurt sheets for Anamneza and Febra. Compare them with the checklists and add any missed items to your own notes.</li>
-      <li><b>Day 3:</b> do the Cases tab. Re-read only the pages behind the questions you missed.</li>
-      <li><b>Day 7:</b> fill in the contrast tables from memory on paper, then check them against the Recall tab.</li>
-    </ul>
-
-    <h3>For the rest of the book (p. 77 → 263, starting with the respiratory system)</h3>
-    <ul class="plain">
-      <li><b>Daily:</b> due reviews first (they'll settle around 30–50 cards), then one new chunk with the loop above. At about 10 pages a day, the remaining ~185 pages take 3 weeks.</li>
-      <li><b>Weekly:</b> one mixed-case session, one teach-back, and one hand-drawn diagram per system (posture, curve, maneuver).</li>
-      <li><b>Before the exam:</b> do not switch to re-reading. Keep doing reviews and cases, and blurt every chapter heading one more time. Sleep the night before. Memory consolidates during sleep, so an all-nighter costs you retention.</li>
-      <li>If an exam date is fixed, place your last new chunk at least 10 days before it, so every card gets 2–3 more reviews.</li>
-    </ul>
-
-    <h3>Using the exam questions</h3>
-    <ul class="plain">
-      <li><b>After a section's cards,</b> practise that chapter in the Exam questions tab with feedback after each question. Read every note: the notes mark the places where the old banks disagree with your course.</li>
-      <li><b>Once a week,</b> run a 30–50 question exam simulation across all chapters you've covered. Then repeat "only my mistakes" until that list is empty.</li>
-      <li>The <b>Chișinău</b> bank and the <b>Grile 3-x</b> sets come from other courses. The Chișinău bank uses some different terms and keys, so where it conflicts with the 2022 course, learn the course version.</li>
-    </ul>
-
-    <h3>Card-writing rules</h3>
-    <ul class="plain">
-      <li>One question, one answer. "Cauzele febrei continue?" is a good card. "Toate tipurile de febră?" is not.</li>
-      <li>Build cards around discriminators: <i>ptoză + mioză</i> vs <i>ptoză + midriază</i>. The exam tests the difference between similar signs.</li>
-      <li>Number thresholds get their own card (37,2 / 37,7; 3–5 mm; 80/94 cm).</li>
-      <li>Use mnemonics only for arbitrary lists, e.g. <b>ABCDE</b> for melanom. Use the mechanism for everything else.</li>
-      <li>If a card fails 4+ times, rewrite it smaller or add the "why". Don't keep grinding the same wording.</li>
-    </ul>
-
-    <h3>Sources</h3>
-    <ul class="plain sources">
-      <li>Dunlosky J. et al. (2013). Improving students' learning with effective learning techniques. <i>Psychol Sci Public Interest</i> 14(1). <a href="https://doi.org/10.1177/1529100612453266" target="_blank" rel="noopener">doi:10.1177/1529100612453266</a>. Rates practice testing and distributed practice "high utility" and highlighting/re-reading "low".</li>
-      <li>Roediger H.L. &amp; Karpicke J.D. (2006). Test-enhanced learning. <i>Psychol Sci</i> 17(3). <a href="https://doi.org/10.1111/j.1467-9280.2006.01693.x" target="_blank" rel="noopener">doi:10.1111/j.1467-9280.2006.01693.x</a></li>
-      <li>Karpicke J.D. &amp; Blunt J.R. (2011). Retrieval practice produces more learning than elaborative studying with concept mapping. <i>Science</i> 331. <a href="https://doi.org/10.1126/science.1199327" target="_blank" rel="noopener">doi:10.1126/science.1199327</a></li>
-      <li>Cepeda N.J. et al. (2008). Spacing effects in learning: a temporal ridgeline of optimal retention. <i>Psychol Sci</i> 19(11). <a href="https://doi.org/10.1111/j.1467-9280.2008.02209.x" target="_blank" rel="noopener">doi:10.1111/j.1467-9280.2008.02209.x</a></li>
-      <li>Rohrer D. &amp; Taylor K. (2007). The shuffling of mathematics problems improves learning. <i>Instr Sci</i> 35. <a href="https://doi.org/10.1007/s11251-007-9015-8" target="_blank" rel="noopener">doi:10.1007/s11251-007-9015-8</a> (interleaving)</li>
-      <li>Larsen D.P., Butler A.C., Roediger H.L. (2009). Repeated testing improves long-term retention relative to repeated study: a randomised controlled trial. <i>Med Educ</i> 43. <a href="https://doi.org/10.1111/j.1365-2923.2009.03518.x" target="_blank" rel="noopener">doi:10.1111/j.1365-2923.2009.03518.x</a> (medical residents)</li>
-      <li>Woźniak P. Twenty rules of formulating knowledge. <a href="https://www.supermemo.com/en/blog/twenty-rules-of-formulating-knowledge" target="_blank" rel="noopener">supermemo.com</a> (card-writing)</li>
-    </ul>
-  </section>
+  
 
   <!-- CASES -->
   <section class="panel" id="tab-cases" hidden>
-    <h2>Mixed clinical cases</h2>
-    <p>The cases are shuffled across topics. Choose an answer before you read the explanation. <span class="score" id="case-score"></span></p>
+    <h2>Clinical cases</h2>
+    <p class="hint">Shuffled across chapters. Choose an answer before you read the explanation. <span class="score" id="case-score"></span></p>
     <div class="controls"><select id="case-ch" aria-label="Chapter"></select><button class="btn" id="case-shuffle">Shuffle &amp; reset</button><button class="btn" id="case-gen" data-ai>Write 10 new cases for this chapter</button></div>
     <div id="cases"></div>
   </section>
 
-  <!-- RECALL -->
-  <section class="panel" id="tab-recall" hidden>
-    <h2>Free recall (blurting)</h2>
-    <div class="controls"><select id="recall-ch" aria-label="Chapter"></select><button class="btn" id="recall-gen" data-ai>Write recall sheets &amp; contrast tables for this chapter</button></div>
-    <p>Open a sheet and type everything you remember about the topic with the book closed. Then tick off what you covered on the checklist. The unticked items show you what to review.</p>
-    <div id="recall"></div>
-    <h2 style="margin-top:28px">Contrast tables</h2>
-    <p>These are the pairs most often confused. Cover a column and reconstruct it.</p>
-    <div id="contrasts"></div>
-  </section>
+  
 
-  <!-- EXPLAIN -->
-  <section class="panel" id="tab-explain" hidden>
-    <h2>Explanations</h2>
-    <p>The mechanisms behind each section. Read a section after you've reviewed its cards. When you know why a sign appears, you can rebuild the fact even if you've forgotten it. Every flashcard has a "Why?" link to its section here.</p>
-    <div class="controls"><select id="ex-filter" aria-label="Section"></select><select id="ex-ch" aria-label="Chapter to write explanations for"></select><button class="btn" id="ex-gen" data-ai>Write explanations for this chapter</button></div>
-    <div id="explain"></div>
-  </section>
+  
 
-  <!-- DECK -->
-  <section class="panel" id="tab-deck" hidden>
-    <h2>All cards</h2>
-    <div class="controls"><input type="search" id="deck-search" placeholder="Search cards…" aria-label="Search cards"></div>
-    <div id="deck"></div>
-  </section>
+  
   <!-- SOURCES & CHAPTERS -->
   <section class="panel" id="tab-sources" hidden>
-    <h2>Sources &amp; chapters</h2>
-    <p>Add course material (books, lecture notes, slides) and question banks in any format: PDF (scanned too), Word, text, HTML or photos of pages. The AI splits the material into chapters, attaching it to the chapters you already have when they match. It then sorts every question bank into those chapters and writes new questions in the same style until each chapter has at least <b id="target-label">100</b>.</p>
+    <h2>Course</h2>
+    <p class="hint" id="src-intro">Upload this subject's course and question banks (PDF, Word, text, photos). The course is split into chapters; matching questions from the bank move in, and new ones are written until each chapter has <b id="target-label">100</b>.</p>
     <div id="src-access"></div>
     <div class="box" id="upload-box">
       <div class="controls" style="margin-bottom:10px">
@@ -380,8 +300,8 @@ select optgroup{font-style:normal;font-weight:700}
 
   <!-- SUMMARIES -->
   <section class="panel" id="tab-summaries" hidden>
-    <h2>Exam summaries</h2>
-    <p>One complete revision sheet per chapter: key definitions, classifications, comparison tables, numbers to know, mnemonics, the traps the question banks set, and a short self-test. It is written from your material and from the questions you get wrong most often.</p>
+    <h2>Summaries</h2>
+    <p class="hint">One revision sheet per chapter: definitions, classifications, tables, numbers, mnemonics and the traps the questions set.</p>
     <div class="controls"><select id="sum-ch" aria-label="Chapter"></select><button class="btn primary" id="sum-gen" data-ai>Write summary</button><button class="btn" id="sum-all" data-ai>Write the missing ones</button><span class="hint" id="sum-status"></span></div>
     <div class="controls" id="sum-tools" hidden><button class="btn small" id="sum-dl">Download .md</button><button class="btn small" id="sum-print">Print / PDF</button><span class="hint" id="sum-date"></span></div>
     <article class="ex md" id="sum-body"></article>
@@ -390,7 +310,7 @@ select optgroup{font-style:normal;font-weight:700}
   <!-- PODCAST -->
   <section class="panel" id="tab-podcast" hidden>
     <h2>Podcast</h2>
-    <p>A short conversation between two hosts about what you must remember from a chapter, read aloud by your browser's voice. Listen while commuting, then do the chapter's cards.</p>
+    <p class="hint">A short conversation between two hosts about what to remember from a chapter.</p>
     <div class="controls"><select id="pod-ch" aria-label="Chapter"></select>
       <label class="inline">Length <select id="pod-min"><option>3</option><option selected>5</option><option>8</option><option>12</option></select> min</label>
       <button class="btn primary" id="pod-gen" data-ai>Write episode</button></div>

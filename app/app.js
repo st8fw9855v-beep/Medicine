@@ -13,6 +13,18 @@ const uid = (p = '') => p + Date.now().toString(36) + Math.random().toString(36)
 const normStem = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^\s*\d+\s*[.)-]\s*/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const BASE_SRC = new Set(Object.keys(BASE.SOURCES));
 
+/* ---------- materii ---------- */
+const SUBJECTS = [
+  { id: 'semio-med', label: 'Semiologie medicală', short: 'Semio med', aliases: ['semio med', 'semiologie medicala'] },
+  { id: 'semio-chir', label: 'Semiologie chirurgicală', short: 'Semio chir', aliases: ['semio chir', 'semiologie chirurgicala'] },
+  { id: 'fiziopat', label: 'Fiziopatologie', short: 'Fiziopat', aliases: ['fiziopatologie', 'fizpat', 'fiziopat'] },
+  { id: 'farmaco', label: 'Farmacologie', short: 'Farmaco', aliases: ['farmacologie', 'farmaco'] },
+  { id: 'morfopat', label: 'Anatomie patologică', short: 'Anatomie patologică', aliases: ['anatomie patologica', 'morfopatologie', 'morfopat', 'anatopat'] },
+];
+const SUBJ_BY = Object.fromEntries(SUBJECTS.map((x) => [x.id, x]));
+function subjOf(name) { const n = normStem(name || ''); if (!n) return null; const x = SUBJECTS.find((x) => x.id === name || normStem(x.label) === n || x.aliases.includes(n)); return x ? x.id : null; }
+let CUR = (() => { try { const v = localStorage.getItem('semio-subject'); return SUBJ_BY[v] ? v : 'semio-med'; } catch (e) { return 'semio-med'; } })();
+
 /* =====================================================================
    Setări locale (per persoană)
    ===================================================================== */
@@ -27,6 +39,11 @@ function saveSettings(s) { try { localStorage.setItem(SET_KEY, JSON.stringify(s)
 const U = { sources: [], chapters: [], grilePacks: [], cardPacks: [], outputs: [] };
 let SECTIONS, SECTION_CH, CARDS, CASES, RECALL, CONTRASTS, EXPLAIN, CHAPTERS, SOURCES, GQ, GQ_BY, byId, CH_ORDER;
 const chMeta = (id) => U.chapters.find((c) => c.id === id);
+// Capitolele originale și cele fără materie (cursul de semiologie încărcat înainte) țin de Semiologie medicală.
+const chSubj = (ch) => (BASE.CHAPTERS[ch] ? 'semio-med' : (chMeta(ch)?.subject || 'semio-med'));
+// Materia unei surse: cea aleasă la încărcare; o bancă din Drive după numele materiei (null = materie care nu e în listă).
+const srcSubj = (s) => (!s ? null : s.subjectId || (s.subject ? subjOf(s.subject) : 'semio-med'));
+const viewChapters = () => CH_ORDER.filter((ch) => chSubj(ch) === CUR);
 
 function rebuild() {
   CHAPTERS = {};
@@ -51,8 +68,12 @@ function rebuild() {
 
   SOURCES = { ...BASE.SOURCES, ai: 'Written by AI from your course' };
   for (const s of U.sources) if (s.kind === 'grile') SOURCES[s.id] = s.name;
-  const base = BASE.GRILE.map((r) => ({ id: r[0], ch: r[1], src: r[2], q: r[3], o: r[4], k: r[5], n: r[6], m: !!r[7] }));
-  const added = U.grilePacks.flatMap((p) => (p.items || []).map((x) => ({ ...x, ch: CHAPTERS[p.ch] ? p.ch : '', src: p.src, pack: p.id })));
+  const base = BASE.GRILE.map((r) => ({ id: r[0], ch: r[1], sj: 'semio-med', src: r[2], q: r[3], o: r[4], k: r[5], n: r[6], m: !!r[7] }));
+  const added = U.grilePacks.flatMap((p) => {
+    const ch = CHAPTERS[p.ch] ? p.ch : '';
+    const sj = ch ? chSubj(ch) : (subjOf(p.subj) || srcSubj(U.sources.find((x) => x.id === p.src)) || (p.subj ? null : 'semio-med'));
+    return (p.items || []).map((x) => ({ ...x, ch, sj, src: p.src, pack: p.id }));
+  });
   GQ = [...base, ...added];
   GQ_BY = Object.fromEntries(GQ.map((x) => [x.id, x]));
 }
@@ -106,7 +127,7 @@ function grade(id, g) {
   return c;
 }
 function rollDay() { if (store.meta.newDay !== today()) { store.meta.newDay = today(); store.meta.newCount = 0; } }
-const inFilter = (c, f) => !f || (f.startsWith('ch:') ? SECTION_CH[c[1]] === f.slice(3) : c[1] === f);
+const inFilter = (c, f) => (!f ? chSubj(SECTION_CH[c[1]]) === CUR : f.startsWith('ch:') ? SECTION_CH[c[1]] === f.slice(3) : c[1] === f);
 function counts(filter) {
   rollDay();
   const now = Date.now(); let due = 0, nw = 0, learn = 0, mat = 0;
@@ -130,7 +151,7 @@ const limitIn = $('#new-limit');
 const sectionsOf = (ch) => Object.keys(SECTIONS).filter((k) => SECTION_CH[k] === ch);
 function fillSecSel() {
   const cur = secSel.value;
-  secSel.innerHTML = '<option value="">All sections</option>' + CH_ORDER.map((ch) => {
+  secSel.innerHTML = '<option value="">All chapters</option>' + viewChapters().map((ch) => {
     const secs = sectionsOf(ch).filter((k) => CARDS.some((c) => c[1] === k));
     if (!secs.length) return '';
     return `<optgroup label="${esc(CHAPTERS[ch])}"><option value="ch:${ch}">All of ${esc(CHAPTERS[ch])}</option>${secs.map((k) => `<option value="${k}">${esc(SECTIONS[k][0])} (${esc(SECTIONS[k][1])})</option>`).join('')}</optgroup>`;
@@ -151,7 +172,8 @@ function renderCard() {
   const box = $('#session');
   if (!cur && !started) {
     const c = counts(secSel.value);
-    box.innerHTML = `<div class="card done"><div class="q">${c.due + c.newLeft} cards ready</div><p class="hint">${c.due} due for review · ${c.newLeft} new. Press Start session.</p></div>`;
+    box.innerHTML = c.ids.length ? `<div class="card done"><div class="q">${c.due + c.newLeft} cards ready</div><p class="hint">${c.due} due for review · ${c.newLeft} new. Press Start session.</p></div>`
+      : `<div class="card done"><div class="q">No cards for ${esc(SUBJ_BY[CUR].label)} yet</div><p class="hint">${viewChapters().length ? 'Pick a chapter below and press “Write cards for this chapter”.' : 'Upload the course in the Course tab first.'}</p></div>`;
     return;
   }
   if (!cur) {
@@ -167,7 +189,6 @@ function renderCard() {
     <div class="meta"><span>${esc(SECTIONS[c[1]][0])} · ${esc(SECTIONS[c[1]][1])}</span><span><span class="pill p-${st}">${st === 'new' ? 'NEW' : st === 'mat' ? 'MATURE' : 'LEARNING'}</span> · ${queue.length} left</span></div>
     <div class="q">${esc(c[2])}</div>
     ${shown ? `<div class="a">${esc(c[3])}</div>
-      ${EXPLAIN[c[1]]?.length ? '<button class="why-link" id="why">Why? Read the explanation for this section →</button>' : ''}
       <div class="grades">
         <button class="g-again" data-g="0">Again<small>10m · 1</small></button>
         <button class="g-hard" data-g="1">Hard<small>${fmt(p.hard)} · 2</small></button>
@@ -176,7 +197,6 @@ function renderCard() {
       </div>` : '<button class="btn primary" id="show">Show answer</button><p class="hint">Answer out loud or on paper first.</p>'}
   </div>`;
   const sb = $('#show'); if (sb) sb.onclick = () => { shown = true; renderCard(); };
-  const wl = $('#why'); if (wl) wl.onclick = () => openExplain(c[1]);
   box.querySelectorAll('[data-g]').forEach((b) => (b.onclick = () => doGrade(+b.dataset.g)));
 }
 function doGrade(g) {
@@ -203,16 +223,18 @@ function showTab(name) {
 $$('nav.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 function chOptions(sel, { all = false, unassigned = false } = {}) {
   const v = sel.value;
+  const list = viewChapters();
   sel.innerHTML = (all ? '<option value="">All chapters</option>' : '') +
-    CH_ORDER.map((k) => `<option value="${k}">${esc(CHAPTERS[k])}</option>`).join('') +
-    (unassigned && GQ.some((x) => !x.ch) ? '<option value="__none">— Question bank (no chapter yet)</option>' : '');
+    list.map((k) => `<option value="${k}">${esc(CHAPTERS[k])}</option>`).join('') +
+    (unassigned && GQ.some((x) => !x.ch && x.sj === CUR) ? '<option value="__none">— Question bank (no chapter yet)</option>' : '') +
+    (!all && !list.length ? '<option value="">No chapters yet</option>' : '');
   if ([...sel.options].some((o) => o.value === v)) sel.value = v;
 }
 
 /* ---------- cases ---------- */
 let caseRight = 0, caseDone = 0;
 function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
-const caseList = () => CASES.filter((c) => !$('#case-ch').value || c.ch === $('#case-ch').value);
+const caseList = () => CASES.filter((c) => chSubj(c.ch) === CUR && (!$('#case-ch').value || c.ch === $('#case-ch').value));
 function renderCases() {
   const list = caseList();
   caseRight = 0; caseDone = 0;
@@ -220,7 +242,7 @@ function renderCases() {
   $('#cases').innerHTML = order.map((ci, n) => { const c = list[ci]; return `<div class="case" data-c="${ci}">
     <b>${n + 1}.</b> ${esc(c.q)}
     <div class="opts">${c.o.map((o, k) => `<button data-k="${k}">${esc(o)}</button>`).join('')}</div>
-    <div class="why" hidden>${esc(c.w)}</div></div>`; }).join('') || '<p class="hint">No cases for this chapter yet.</p>';
+    <div class="why" hidden>${esc(c.w)}</div></div>`; }).join('') || '<p class="hint">No cases here yet. Pick a chapter and press “Write 10 new cases”.</p>';
   $('#cases').querySelectorAll('.case').forEach((el) => {
     el.querySelectorAll('.opts button').forEach((btn) => (btn.onclick = () => {
       if (el.dataset.done) return; el.dataset.done = 1;
@@ -236,53 +258,6 @@ function updScore() { $('#case-score').textContent = caseDone ? `Score: ${caseRi
 $('#case-shuffle').onclick = renderCases;
 $('#case-ch').onchange = () => { renderCases(); aiButtons(); };
 
-/* ---------- recall & contrasts ---------- */
-function renderRecall() {
-  const ch = $('#recall-ch').value;
-  const rec = RECALL.filter((r) => !ch || r.ch === ch);
-  $('#recall').innerHTML = rec.map((r, i) => `<details class="recall"><summary>${esc(r.t)}</summary>
-  <p class="prompt">${esc(r.p)}</p>
-  <textarea id="blurt-${i}" aria-label="Your recall for ${esc(r.t)}" placeholder="Book closed. Write everything you remember…"></textarea>
-  <details style="margin-top:8px"><summary class="hint">Show checklist and tick what you got (${r.i.length} items)</summary>
-  <div class="checks">${r.i.map((it, k) => `<label><input type="checkbox" id="chk-${i}-${k}"> ${esc(it)}</label>`).join('')}</div></details>
-</details>`).join('') || '<p class="hint">No recall sheets for this chapter yet.</p>';
-  $('#contrasts').innerHTML = CONTRASTS.filter((t) => !ch || t.ch === ch).map((t) => `<h3>${esc(t.t)}</h3><div class="tablewrap"><table><thead><tr>${t.h.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${t.r.map((r) => `<tr>${r.map((c, i) => (i === 0 ? `<td><b>${esc(c)}</b></td>` : `<td>${esc(c)}</td>`)).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
-}
-$('#recall-ch').onchange = () => { renderRecall(); aiButtons(); };
-
-/* ---------- deck ---------- */
-function renderDeck() {
-  const q = ($('#deck-search').value || '').toLowerCase();
-  $('#deck').innerHTML = CH_ORDER.flatMap(sectionsOf).map((k) => {
-    const v = SECTIONS[k];
-    const cs = CARDS.filter((c) => c[1] === k && (!q || (c[2] + ' ' + c[3]).toLowerCase().includes(q)));
-    if (!cs.length) return '';
-    return `<div class="deckgroup"><h3>${esc(v[0])} <small>${esc(v[1])} · ${cs.length} cards</small></h3>${cs.map((c) => { const st = status(c[0]); return `<div class="dc"><div class="dq"><span class="pill p-${st}">${st === 'new' ? 'NEW' : st === 'mat' ? 'MATURE' : 'LEARNING'}</span> ${esc(c[2])}</div><div class="da">${esc(c[3])}</div></div>`; }).join('')}</div>`;
-  }).join('') || '<p class="hint">No cards match.</p>';
-}
-$('#deck-search').addEventListener('input', renderDeck);
-onShow.deck = renderDeck;
-
-/* ---------- explanations ---------- */
-const exSel = $('#ex-filter');
-function fillExSel() {
-  const v = exSel.value;
-  exSel.innerHTML = '<option value="">All sections</option>' + CH_ORDER.map((ch) => {
-    const secs = sectionsOf(ch).filter((k) => EXPLAIN[k]?.length);
-    return secs.length ? `<optgroup label="${esc(CHAPTERS[ch])}">${secs.map((k) => `<option value="${k}">${esc(SECTIONS[k][0])} (${esc(SECTIONS[k][1])})</option>`).join('')}</optgroup>` : '';
-  }).join('');
-  if ([...exSel.options].some((o) => o.value === v)) exSel.value = v;
-}
-function renderExplain() {
-  const f = exSel.value;
-  $('#explain').innerHTML = CH_ORDER.flatMap(sectionsOf).filter((k) => EXPLAIN[k]?.length && (!f || k === f)).map((k) => `<article class="ex" id="ex-${k}">
-    <div class="eyebrow">${esc(SECTIONS[k][1])}</div><h3>${esc(SECTIONS[k][0])}</h3>
-    ${EXPLAIN[k].map(([h, t]) => `<h4>${h}</h4>${/^\s*<(p|ul|ol|h\d|table)/.test(t) ? t : `<p>${t}</p>`}`).join('')}
-  </article>`).join('');
-}
-exSel.addEventListener('change', renderExplain);
-function openExplain(sec) { exSel.value = sec; renderExplain(); showTab('explain'); window.scrollTo({ top: 0 }); }
-
 /* ---------- exam questions (grile) ---------- */
 function gstat(id) { return (store.g && store.g[id]) || null; }
 function gRecord(id, ok) {
@@ -296,11 +271,11 @@ gFilt.ch.innerHTML = '<option value="I">I</option>';
 function fillGFilters() {
   chOptions(gFilt.ch, { all: true, unassigned: true });
   const src = gFilt.src.value;
-  gFilt.src.innerHTML = '<option value="">All sources</option>' + Object.entries(SOURCES).filter(([k]) => GQ.some((x) => x.src === k)).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  gFilt.src.innerHTML = '<option value="">All sources</option>' + Object.entries(SOURCES).filter(([k]) => GQ.some((x) => x.src === k && x.sj === CUR)).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
   if ([...gFilt.src.options].some((o) => o.value === src)) gFilt.src.value = src;
 }
 function gPool() {
-  return GQ.filter((x) =>
+  return GQ.filter((x) => x.sj === CUR &&
     (!gFilt.ch.value || (gFilt.ch.value === '__none' ? !x.ch : x.ch === gFilt.ch.value)) &&
     (!gFilt.src.value || x.src === gFilt.src.value) &&
     (!gFilt.type.value || (gFilt.type.value === 's' ? x.k.length === 1 : x.k.length > 1)) &&
@@ -309,7 +284,7 @@ function gPool() {
 }
 function gRenderStats() {
   const target = getSettings().target;
-  $('#g-stats').innerHTML = CH_ORDER.map((k) => {
+  $('#g-stats').innerHTML = viewChapters().map((k) => {
     const all = GQ.filter((x) => x.ch === k);
     const done = all.filter((x) => gstat(x.id));
     const right = done.filter((x) => gstat(x.id)[2] === 1).length;
@@ -730,9 +705,10 @@ async function segmentNew(job, mats) {
     for (let gi = 0; gi < groups.length; gi++) {
       job.status(`Splitting “${src.name}” into chapters (${gi + 1}/${groups.length})…`);
       const ids = groups[gi];
-      const existing = CH_ORDER.map((id) => `- ${id}: ${CHAPTERS[id]}${topicsOf(id).length ? ' (' + topicsOf(id).slice(0, 8).join('; ') + ')' : ''}`).join('\n');
+      const sj = srcSubj(src) || CUR;
+      const existing = CH_ORDER.filter((id) => chSubj(id) === sj).map((id) => `- ${id}: ${CHAPTERS[id]}${topicsOf(id).length ? ' (' + topicsOf(id).slice(0, 8).join('; ') + ')' : ''}`).join('\n');
       const res = await askJSON(
-        'Ești profesor universitar de medicină și organizezi materia de examen. Mai jos e un fragment dintr-o sursă de curs, împărțit în blocuri numerotate [§n].\n' +
+        `Ești profesor universitar de medicină și organizezi materia de examen la ${SUBJ_BY[sj].label}. Mai jos e un fragment dintr-o sursă de curs, împărțit în blocuri numerotate [§n].\n` +
         'Împarte fragmentul în capitole de studiu coerente, în ordinea predării. Un capitol trebuie să fie suficient de bogat pentru ~100 de grile (de regulă un capitol/curs din material); nu fragmenta excesiv.\n' +
         'Aplicația are deja capitolele de mai jos. Dacă o parte din fragment ține de un capitol existent (inclusiv continuarea unui capitol început într-un fragment anterior), pune cheia lui în "existing"; altfel "existing" = "".\n' +
         'Intervalele sunt inclusive și folosesc numerele blocurilor; acoperă tot conținutul util, ignoră cuprinsul și bibliografia. Titlurile, rezumatele și subtemele în limba română; "topics" = 5-15 subteme concrete.\n' +
@@ -744,7 +720,7 @@ async function segmentNew(job, mats) {
         const from = Math.max(ids[0], Math.min(+c.fromBlock, +c.toBlock)), to = Math.min(ids[ids.length - 1], Math.max(+c.fromBlock, +c.toBlock));
         if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) continue;
         const range = { sourceId: src.id, fromBlock: from, toBlock: to };
-        const ex = c.existing && CHAPTERS[c.existing] ? c.existing : null;
+        const ex = c.existing && CHAPTERS[c.existing] && chSubj(c.existing) === sj ? c.existing : null;
         if (ex) {
           const m = chMeta(ex) || { id: ex, title: BASE.CHAPTERS[ex] || CHAPTERS[ex], summary: '', topics: [], ranges: [], sections: {}, order: 0 };
           const next = { ...m, ranges: [...(m.ranges || []), range], topics: [...new Set([...(m.topics || []), ...(c.topics || [])])], summary: m.summary || c.summary || '' };
@@ -752,7 +728,7 @@ async function segmentNew(job, mats) {
         } else {
           const sections = {}; for (const t of c.topics || []) sections[uid('s')] = t;
           const nid = uid('ch');
-          await put('chapters', { id: nid, title: String(c.title || 'Capitol nou'), summary: String(c.summary || ''), topics: c.topics || [], ranges: [range], sections, order: Date.now() + created });
+          await put('chapters', { id: nid, subject: sj, title: String(c.title || 'Capitol nou'), summary: String(c.summary || ''), topics: c.topics || [], ranges: [range], sections, order: Date.now() + created });
           created++; createdIds.push(nid); touched.add(nid);
         }
       }
@@ -770,7 +746,8 @@ async function extractBank(job, src, label = '') {
   const chunks = chunkBlocks(blocks, 20000, 1);
   const tail = blocks.join('\n').slice(-10000);
   // Grilele din bancă (Drive) nu intră în „Alte capitole": așteaptă capitolul lor.
-  const ids = CH_ORDER.filter((id) => !(src.pool && id === 'X'));
+  const sj = srcSubj(src);
+  const ids = CH_ORDER.filter((id) => chSubj(id) === sj && !(src.pool && id === 'X'));
   const menu = ids.map((id, i) => `${i + 1}. ${CHAPTERS[id]} — subteme: ${topicsOf(id).slice(0, 12).join('; ')}`).join('\n');
   const seen = new Set(GQ.map((x) => normStem(x.q)));
   let added = src.extractedCount || 0;
@@ -782,7 +759,7 @@ async function extractBank(job, src, label = '') {
       'Reguli: (1) Copiază fidel enunțul și variantele (fără litera din față). (2) "correct" = indicii variantelor corecte (0=A … 4=E). Dacă documentul dă răspunsul/cheia, folosește-o și pune "answerSource":"cheie"; altfel deduce răspunsul din cunoștințele medicale și pune "answerSource":"dedus". ' +
       '(3) "chapter" = numărul capitolului din listă căruia îi aparține grila, DOAR dacă aparține clar acelui capitol (aceeași materie); altfel 0 — grila rămâne în bancă până apare capitolul ei. (4) "explanation" = 1-3 fraze. (5) Ignoră grilele tăiate la începutul/finalul fragmentului, întrebările deschise fără variante și textele care nu sunt grile. Nu inventa grile. (6) Ignoră grilele care nu sunt în limba română.\n' +
       (src.subject ? `MATERIA (după folderul sursei): ${src.subject}.\n` : '') + '\n' +
-      `CAPITOLE:\n${menu}\n\n` + (tail && i < chunks.length - 1 ? `FINALUL DOCUMENTULUI (poate conține cheia):\n${tail}\n\n` : '') +
+      `CAPITOLE:\n${menu || '(niciun capitol încă — pune "chapter": 0)'}\n\n` + (tail && i < chunks.length - 1 ? `FINALUL DOCUMENTULUI (poate conține cheia):\n${tail}\n\n` : '') +
       `FRAGMENTUL ${i + 1}/${chunks.length}:\n${chunks[i]}\n\n` +
       'Răspunde doar cu JSON: {"questions":[{"stem":"…","options":["…"],"correct":[0],"explanation":"…","topic":"…","chapter":n,"answerSource":"cheie"|"dedus"}]}',
       { signal: job.signal });
@@ -802,30 +779,24 @@ async function extractBank(job, src, label = '') {
 
 async function assignOrphans(job, focus = null) {
   const packs = U.grilePacks.filter((p) => !CHAPTERS[p.ch]);
-  let items = packs.flatMap((p) => p.items.map((x) => ({ ...x, src: p.src, subj: p.subj || '' })));
-  if (!items.length) return 0;
-  const ids = CH_ORDER.filter((id) => id !== 'X');
-  const target = focus?.length ? focus : ids;
-  // Întâi: din ce materii ale băncii pot veni grile pentru aceste capitole (un apel scurt).
-  const subjects = [...new Set(items.map((x) => x.subj).filter(Boolean))];
-  if (subjects.length > 1) {
-    job.status('Matching the question bank to the chapters…');
-    const res = await askJSON(`Capitole de medicină:\n${target.map((id) => `- ${CHAPTERS[id]} (${topicsOf(id).slice(0, 8).join('; ')})`).join('\n')}\n\nMaterii din banca de grile: ${subjects.join(', ')}.\nCare dintre aceste materii pot conține grile pentru capitolele de mai sus? Răspunde doar cu JSON: {"subjects":["…"]}`, { signal: job.signal, tier: 'quick' });
-    const keep = new Set((res.subjects || []).map((x) => normStem(x)));
-    items = items.filter((x) => !x.subj || keep.has(normStem(x.subj)));
-    if (!items.length) return 0;
-  }
-  const menu = ids.map((id, i) => `${i + 1}. ${CHAPTERS[id]} — ${topicsOf(id).slice(0, 10).join('; ')}`).join('\n');
+  const all = packs.flatMap((p) => { const sj = subjOf(p.subj) || srcSubj(U.sources.find((x) => x.id === p.src)) || (p.subj ? null : 'semio-med'); return p.items.map((x) => ({ ...x, src: p.src, subj: p.subj || '', sj })); });
+  const subjects = focus?.length ? [...new Set(focus.map(chSubj))] : SUBJECTS.map((x) => x.id);
   const moved = {};
-  for (let i = 0; i < items.length; i += 120) {
-    const part = items.slice(i, i + 120);
-    job.status(`Sorting questions into chapters (${Math.min(i + 120, items.length)}/${items.length})…`);
-    const res = await askJSON(`Asociază fiecare grilă capitolului căruia îi aparține clar (0 dacă niciunul — grila rămâne în bancă).\n\nCAPITOLE:\n${menu}\n\nGRILE:\n` +
-      part.map((x, k) => `${k + 1}. ${x.q} | ${x.o.join(' | ')}`.slice(0, 400)).join('\n') + '\n\nRăspunde doar cu JSON: {"map":[{"q":n,"chapter":n}]}', { signal: job.signal, tier: 'quick' });
-    for (const m of res.map || []) { const x = part[m.q - 1]; const ch = ids[m.chapter - 1]; if (x && ch) (moved[ch + '|' + x.src + '|' + x.subj] ||= []).push(x); }
+  for (const sj of subjects) {
+    const items = all.filter((x) => x.sj === sj);
+    const ids = CH_ORDER.filter((id) => chSubj(id) === sj && id !== 'X');
+    if (!items.length || !ids.length) continue;
+    const menu = ids.map((id, i) => `${i + 1}. ${CHAPTERS[id]} — ${topicsOf(id).slice(0, 10).join('; ')}`).join('\n');
+    for (let i = 0; i < items.length; i += 120) {
+      const part = items.slice(i, i + 120);
+      job.status(`${SUBJ_BY[sj].label}: matching bank questions to chapters (${Math.min(i + 120, items.length)}/${items.length})…`);
+      const res = await askJSON(`Materia: ${SUBJ_BY[sj].label}. Asociază fiecare grilă capitolului căruia îi aparține clar (0 dacă niciunul — grila rămâne în bancă).\n\nCAPITOLE:\n${menu}\n\nGRILE:\n` +
+        part.map((x, k) => `${k + 1}. ${x.q} | ${x.o.join(' | ')}`.slice(0, 400)).join('\n') + '\n\nRăspunde doar cu JSON: {"map":[{"q":n,"chapter":n}]}', { signal: job.signal, tier: 'quick' });
+      for (const m of res.map || []) { const x = part[m.q - 1]; const ch = ids[m.chapter - 1]; if (x && ch) (moved[ch + '|' + x.src + '|' + x.subj] ||= []).push(x); }
+    }
   }
   const movedIds = new Set(Object.values(moved).flat().map((x) => x.id));
-  for (const [key, list] of Object.entries(moved)) { const [ch, src, subj] = key.split('|'); await put('grilePacks', { id: uid('gp'), ch, src, subj, items: list.map(({ src: _s, subj: _j, ...x }) => x), createdAt: Date.now() }); }
+  for (const [key, list] of Object.entries(moved)) { const [ch, src, subj] = key.split('|'); await put('grilePacks', { id: uid('gp'), ch, src, subj, items: list.map(({ src: _s, subj: _j, sj: _k, ...x }) => x), createdAt: Date.now() }); }
   for (const p of packs) { const rest = p.items.filter((x) => !movedIds.has(x.id)); if (rest.length !== p.items.length) rest.length ? await put('grilePacks', { ...p, items: rest }) : await del('grilePacks', p.id); }
   return movedIds.size;
 }
@@ -938,30 +909,6 @@ async function writeCases(job, ch) {
   await saveOutput(ch, 'cases', cases);
   return `${cases.length} cases`;
 }
-async function writeRecall(job, ch) {
-  job.status(`${CHAPTERS[ch]}: writing recall sheets & contrast tables…`);
-  const mat = await chapterMaterial(ch, 0);
-  const res = await askJSON(
-    'Pregătești fișe de RECALL LIBER (blurting) și TABELE DE CONTRAST pentru un capitol de medicină, în română. recall: 6-12 fișe; t = tema, p = sarcina („Listează în ordine…”, „Desenează… și scrie cauzele…”), i = checklist-ul complet al elementelor de reamintit (scurte). ' +
-    'contrasts: 2-5 tabele cu entitățile care se confundă la examen; t = titlu, h = antetele (prima coloană = entitatea), r = rânduri cu exact atâtea celule câte antete. Strict pe baza materialului.\n\n' +
-    `${chapterHeader(ch)}\n\nMATERIAL:\n${mat.text}\n\nRăspunde doar cu JSON: {"recall":[{"t":"…","p":"…","i":["…"]}],"contrasts":[{"t":"…","h":["…"],"r":[["…"]]}]}`, { signal: job.signal });
-  const content = { recall: (res.recall || []).filter((r) => r.t && Array.isArray(r.i)), contrasts: (res.contrasts || []).filter((t) => t.t && Array.isArray(t.h) && Array.isArray(t.r)) };
-  await saveOutput(ch, 'recall', content, true);
-  return `${content.recall.length} recall sheets, ${content.contrasts.length} contrast tables`;
-}
-async function writeExplain(job, ch) {
-  await ensureSections(ch);
-  job.status(`${CHAPTERS[ch]}: writing explanations…`);
-  const mat = await chapterMaterial(ch, 0);
-  const res = await askJSON(
-    'Scrii EXPLICAȚII DE MECANISM pentru un capitol de medicină, în română: pentru fiecare subtemă, 1-3 paragrafe scurte care leagă semnele/faptele de cauza lor („de ce apare X”, „de ce Y se corectează cu O₂ iar Z nu”). section = denumirea exactă a subtemei; title = ideea-cheie; text = explicația (Markdown simplu, termenii-cheie în **bold**). Bazează-te pe material.\n\n' +
-    `${chapterHeader(ch)}\n\nMATERIAL:\n${mat.text}\n\nRăspunde doar cu JSON: {"items":[{"section":"…","title":"…","text":"…"}]}`, { signal: job.signal });
-  const items = (res.items || []).filter((it) => it.title && it.text);
-  const missing = [...new Set(items.map((it) => it.section).filter((s) => s && !sectionsOf(ch).some((k) => normStem(SECTIONS[k][0]) === normStem(s))))];
-  if (missing.length && sectionsOf(ch).length < 25) await ensureSections(ch, missing.slice(0, 5));
-  await saveOutput(ch, 'explain', items.map((it) => ({ sec: sectionKeyFor(ch, it.section || ''), title: String(it.title), text: String(it.text) })), true);
-  return `${items.length} explanations`;
-}
 async function writeSummary(job, ch, onText) {
   const mat = await chapterMaterial(ch, 0);
   const qs = chGrile(ch);
@@ -1014,6 +961,7 @@ $('#paste-add').onclick = async () => {
 };
 async function saveSource(name, kind, text, extra, job) {
   const id = uid('src');
+  extra = { subjectId: CUR, subject: SUBJ_BY[CUR].label, ...extra };
   const blocks = splitBlocks(text);
   for (let i = 0, n = 0; i < blocks.length; i += CHUNK, n++) {
     job?.status(`Saving… ${Math.min(i + CHUNK, blocks.length)}/${blocks.length} blocks`);
@@ -1049,14 +997,15 @@ let processing = false;
 async function autoProcess() {
   if (processing || !aiReady() || jobs.some((j) => j.kind === 'upload' && j.state === 'run')) return;
   const newMat = U.sources.filter((s) => s.kind === 'material' && !s.segmented);
-  const newBanks = U.sources.filter((s) => s.kind === 'grile' && !s.extractedAt);
+  const inList = (s) => !!SUBJ_BY[srcSubj(s)];
+  const newBanks = U.sources.filter((s) => s.kind === 'grile' && !s.extractedAt && inList(s));
   if (!newMat.length && !newBanks.length) return;
   processing = true;
   await runJob(newMat.length ? 'Processing new sources' : 'Reading the question bank', async (job) => {
     const msg = [];
     let touched = [];
     if (newMat.length) { msg.push(await segmentNew(job, newMat)); touched = segmentNew.touched || []; }
-    const banks = U.sources.filter((s) => s.kind === 'grile' && !s.extractedAt);
+    const banks = U.sources.filter((s) => s.kind === 'grile' && !s.extractedAt && inList(s));
     let bankAdded = 0;
     for (let i = 0; i < banks.length; i++) {
       const before = srcNow(banks[i].id)?.extractedCount || 0;
@@ -1083,7 +1032,7 @@ $('#seg').onclick = () => {
   runJob('Splitting material into chapters', (job) => segmentNew(job, mats));
 };
 $('#assign-orphans').onclick = () => { if (!needAI()) runJob('Sorting questions into chapters', async (job) => `${await assignOrphans(job)} questions sorted.`); };
-$('#fill-all').onclick = () => fillChapters(CH_ORDER.filter((ch) => chGrile(ch).length < getSettings().target));
+$('#fill-all').onclick = () => fillChapters(viewChapters().filter((ch) => chGrile(ch).length < getSettings().target));
 function fillChapters(ids) {
   if (needAI()) return;
   if (!ids.length) return toast('Every chapter already has enough questions.');
@@ -1097,7 +1046,7 @@ function fillChapters(ids) {
 async function prepareChapter(ch) {
   if (needAI()) return;
   const s = getSettings();
-  if (!await ask(`Prepare everything for “${CHAPTERS[ch]}”?\n\nThis checks the keys against the course, fills the chapter to ${s.target} questions and ${s.cardTarget} cards, then writes cases, recall sheets, explanations, an exam summary and a podcast where they are missing. It takes several minutes and uses your Claude usage.`, { ok: 'Prepare' })) return;
+  if (!await ask(`Prepare everything for “${CHAPTERS[ch]}”?\n\nThis checks the keys against the course, fills the chapter to ${s.target} questions and ${s.cardTarget} cards, then writes cases, an exam summary and a podcast where they are missing. It takes several minutes and uses your Claude usage.`, { ok: 'Prepare' })) return;
   runJob(`Preparing: ${CHAPTERS[ch]}`, async (job) => {
     const done = [];
     if (hasMaterial(ch)) done.push(await verifyKeys(job, ch));
@@ -1105,8 +1054,6 @@ async function prepareChapter(ch) {
     done.push(await writeCards(job, ch, s.cardTarget));
     job.progress(null);
     if (ch !== 'I' && !latest(ch, 'cases')) done.push(await writeCases(job, ch));
-    if (ch !== 'I' && !latest(ch, 'recall')) done.push(await writeRecall(job, ch));
-    if (ch !== 'I' && !latest(ch, 'explain')) done.push(await writeExplain(job, ch));
     if (!latest(ch, 'summary')) { job.status('Writing the exam summary…'); await writeSummary(job, ch); done.push('summary'); }
     if (!latest(ch, 'podcast')) { await writePodcast(job, ch, s.podcastMinutes); done.push('podcast'); }
     return `${CHAPTERS[ch]} is ready: ${done.join(', ')}.`;
@@ -1123,29 +1070,28 @@ function renderSources() {
     : !R.sample ? '<div class="notice">Claude is not available in this view, so new material cannot be processed here.</div>'
     : '<div class="notice info">Anything you add here is shared with everyone who opens this page. The AI work runs on your own Claude usage.</div>';
   $('#upload-box').hidden = !aiReady();
-  const mats = U.sources.filter((s) => s.kind === 'material'), banks = U.sources.filter((s) => s.kind === 'grile');
+  const mats = U.sources.filter((s) => s.kind === 'material' && srcSubj(s) === CUR), banks = U.sources.filter((s) => s.kind === 'grile' && srcSubj(s) === CUR);
   const row = (s) => `<div class="srow"><div><div class="nm">${s.kind === 'material' ? '📘' : '📝'} ${esc(s.name)}</div>
       <div class="hint">${fmtN(s.chars || 0)} characters${s.transcribed ? ' · transcribed by Claude' : ''} · ${s.kind === 'material' ? (s.segmented ? 'split into chapters' : '<b>not split yet</b>') : (s.extractedAt ? `${s.extractedCount ?? 0} questions added` : s.doneChunks ? `reading: part ${s.doneChunks}/${s.nChunks || '?'}` : '<b>not read yet</b>')}${s.subject ? ` · ${esc(s.subject)}` : ''}${s.origin ? ` · <span title="${esc(s.origin)}">from Drive</span>` : ''}</div></div>
       ${aiReady() ? `<div class="acts"><button class="btn small" data-flip="${s.id}" title="Switch between course material and question bank">⇄</button><button class="btn small danger" data-delsrc="${s.id}">Delete</button></div>` : ''}</div>`;
-  const pool = GQ.filter((x) => !x.ch && x.src !== 'ai');
-  const bySubj = {}; for (const p of U.grilePacks.filter((p) => !CHAPTERS[p.ch])) bySubj[p.subj || 'other'] = (bySubj[p.subj || 'other'] || 0) + p.items.length;
+  const pool = GQ.filter((x) => !x.ch && x.src !== 'ai' && x.sj === CUR);
   const pending = banks.filter((s) => !s.extractedAt);
   const bankBox = (banks.length ? `<div class="box"><b>Question bank</b>
     <p class="hint" style="margin:6px 0">${fmtN(banks.reduce((n, s) => n + (s.extractedCount || 0), 0))} questions read from ${banks.length} files${pending.length ? `; ${pending.length} files still to read (${pending.reduce((n, s) => n + (s.doneChunks || 0), 0)} parts done)` : ''}.
-    ${pool.length ? `<b>${fmtN(pool.length)}</b> are waiting for their chapter: ${Object.entries(bySubj).map(([k, v]) => `${esc(k)} ${fmtN(v)}`).join(' · ')}. When you upload the course for one of these, its questions move into the new chapters automatically.` : ''}</p>
+    ${pool.length ? `<b>${fmtN(pool.length)}</b> are waiting for their chapter. When you upload the course, they move into its chapters automatically.` : ''}</p>
     ${pending.length && aiReady() && !processing ? '<button class="btn small primary" id="bank-continue">Continue reading the question bank</button>' : ''}${processing ? '<span class="hint">Reading now — keep this page open. If you close it, it continues from where it stopped next time.</span>' : ''}</div>` : '');
   const listed = [...mats, ...banks.filter((s) => !s.pool)];
   const drive = banks.filter((s) => s.pool);
   $('#src-list').innerHTML = bankBox + (listed.length ? `<div class="box">${listed.map(row).join('')}</div>` : '') +
     (drive.length ? `<details class="box"><summary><b>Files from Google Drive</b> <span class="hint">(${drive.length})</span></summary>${drive.map(row).join('')}</details>` : '');
   const bc = $('#bank-continue'); if (bc) bc.onclick = () => autoProcess();
-  const orphans = GQ.filter((x) => !x.ch).length;
+  const orphans = GQ.filter((x) => !x.ch && x.sj === CUR).length;
   $('#assign-orphans').hidden = !orphans || !aiReady();
   $('#assign-orphans').textContent = `Sort ${orphans} unassigned questions into chapters`;
   $('#fill-all').textContent = `Fill every chapter to ${target} questions`;
   $('#fill-all').hidden = $('#seg').hidden = $('#seg-hint').hidden = !aiReady();
   const w = aiReady();
-  $('#ch-list').innerHTML = CH_ORDER.map((ch) => {
+  $('#ch-list').innerHTML = (viewChapters().length ? '' : `<p class="hint">No chapters for ${esc(SUBJ_BY[CUR].label)} yet. Upload the course above.</p>`) + viewChapters().map((ch) => {
     const m = chMeta(ch) || {};
     const qs = chGrile(ch), base = qs.filter((x) => BASE_SRC.has(x.src)).length, ai = qs.filter((x) => x.src === 'ai').length;
     const pct = Math.min(100, Math.round((qs.length / target) * 100));
@@ -1207,13 +1153,11 @@ onShow.sources = renderSources;
 /* ---------- generare din tab-urile originale ---------- */
 function aiButtons() {
   const w = aiReady();
-  for (const id of ['#case-gen', '#recall-gen', '#ex-gen', '#ex-ch', '#cards-gen', '#cards-ch']) $(id).hidden = !w;
-  $('#case-gen').disabled = !$('#case-ch').value; $('#recall-gen').disabled = !$('#recall-ch').value;
+  for (const id of ['#case-gen', '#cards-gen', '#cards-ch']) $(id).hidden = !w;
+  $('#case-gen').disabled = !$('#case-ch').value; $('#cards-gen').disabled = !$('#cards-ch').value;
   $('#cards-info').textContent = w ? `${chCards($('#cards-ch').value).length} cards in this chapter` : '';
 }
 $('#case-gen').onclick = () => { const ch = $('#case-ch').value; if (ch && !needAI()) runJob(`Cases: ${CHAPTERS[ch]}`, (job) => writeCases(job, ch)); };
-$('#recall-gen').onclick = () => { const ch = $('#recall-ch').value; if (ch && !needAI()) runJob(`Recall & contrasts: ${CHAPTERS[ch]}`, (job) => writeRecall(job, ch)); };
-$('#ex-gen').onclick = () => { const ch = $('#ex-ch').value; if (ch && !needAI()) runJob(`Explanations: ${CHAPTERS[ch]}`, (job) => writeExplain(job, ch)); };
 $('#cards-gen').onclick = () => { const ch = $('#cards-ch').value; if (ch && !needAI()) runJob(`Cards: ${CHAPTERS[ch]}`, (job) => writeCards(job, ch, Math.max(getSettings().cardTarget, chCards(ch).length + 20))); };
 $('#cards-ch').onchange = aiButtons;
 
@@ -1237,12 +1181,12 @@ function renderSummary() {
   const o = latest(ch, 'summary');
   $('#sum-gen').textContent = o ? 'Rewrite summary' : 'Write summary';
   $('#sum-gen').hidden = $('#sum-all').hidden = !aiReady();
-  const n = CH_ORDER.filter((k) => latest(k, 'summary')).length;
-  $('#sum-status').textContent = `${n}/${CH_ORDER.length} chapters have a summary`;
+  const n = viewChapters().filter((k) => latest(k, 'summary')).length;
+  $('#sum-status').textContent = `${n}/${viewChapters().length} chapters have a summary`;
   $('#sum-tools').hidden = !o;
   $('#sum-print').hidden = true;
   if (o) $('#sum-date').textContent = 'Written ' + new Date(o.createdAt).toLocaleString('ro-RO');
-  if (sumStreaming !== ch) $('#sum-body').innerHTML = o ? md(o.content) : `<p class="hint">No summary for this chapter yet.${aiReady() ? ' Press Write summary.' : ''}</p>`;
+  if (sumStreaming !== ch) $('#sum-body').innerHTML = o ? md(o.content) : `<p class="hint">${ch ? 'No summary for this chapter yet.' + (aiReady() ? ' Press Write summary.' : '') : 'No chapters yet. Upload the course in the Course tab.'}</p>`;
 }
 $('#sum-ch').onchange = renderSummary;
 function writeSummaries(chs) {
@@ -1264,8 +1208,8 @@ function writeSummaries(chs) {
     return 'Summaries ready.';
   });
 }
-$('#sum-gen').onclick = () => writeSummaries([$('#sum-ch').value]);
-$('#sum-all').onclick = () => writeSummaries(CH_ORDER.filter((k) => !latest(k, 'summary')));
+$('#sum-gen').onclick = () => { if ($('#sum-ch').value) writeSummaries([$('#sum-ch').value]); else toast('Upload the course first so there are chapters.'); };
+$('#sum-all').onclick = () => writeSummaries(viewChapters().filter((k) => !latest(k, 'summary')));
 $('#sum-dl').onclick = () => { const o = latest($('#sum-ch').value, 'summary'); if (o) saveFile(`Sinteza - ${CHAPTERS[o.ch]}.md`, `# ${CHAPTERS[o.ch]}\n\n${o.content}`); };
 onShow.summaries = renderSummary;
 
@@ -1343,6 +1287,7 @@ $('#pod-min').value = String(getSettings().podcastMinutes || 5);
 $('#pod-min').onchange = (e) => saveSettings({ ...getSettings(), podcastMinutes: +e.target.value });
 $('#pod-gen').onclick = () => {
   const ch = $('#pod-ch').value;
+  if (!ch) return toast('Upload the course first so there are chapters.');
   if (needAI()) return;
   stopPod();
   runJob(`Podcast: ${CHAPTERS[ch]}`, async (job) => { const c = await writePodcast(job, ch, +$('#pod-min').value); return `Episode ready: ${c.lines.length} lines.`; });
@@ -1407,23 +1352,39 @@ onShow.settings = renderSettings;
    ===================================================================== */
 function refreshAll() {
   rebuild();
-  $('#subtitle').textContent = `A spaced-repetition deck (${CARDS.length} cards), mixed clinical cases, recall sheets and mechanism explanations, plus ${GQ.length} exam questions (grile) across ${CH_ORDER.length} chapters, with keys checked against the course. Add material and question banks in Sources & chapters.`;
-  fillSecSel(); fillExSel(); fillGFilters();
-  for (const id of ['#case-ch', '#recall-ch']) chOptions($(id), { all: true });
-  for (const id of ['#ex-ch', '#cards-ch', '#sum-ch', '#pod-ch']) chOptions($(id));
+  renderSubjects();
+  fillSecSel(); fillGFilters();
+  chOptions($('#case-ch'), { all: true });
+  for (const id of ['#cards-ch', '#sum-ch', '#pod-ch']) chOptions($(id));
   aiButtons();
   if (!gMode) gRenderStats(); else $('#g-count').textContent = gPool().length + ' questions match';
   limitIn.value = store.meta.newLimit; refreshStats(); if (!started) renderCard();
   if (!caseDone) renderCases();
-  renderRecall(); renderExplain();
-  $('#card-count').textContent = CARDS.length;
   const visible = $$('nav.tabs button').find((b) => b.getAttribute('aria-selected') === 'true')?.dataset.tab;
   if (visible === 'podcast') { if (!pod.playing) renderPodcast(); }
-  else if (visible && onShow[visible] && visible !== 'deck') onShow[visible]();
+  else if (visible && onShow[visible]) onShow[visible]();
 }
 
+/* ---------- bara de materii ---------- */
+function renderSubjects() {
+  const sub = SUBJ_BY[CUR];
+  $('#subj-name').textContent = sub.label;
+  const nCards = CARDS.filter((c) => chSubj(SECTION_CH[c[1]]) === CUR).length, nQ = GQ.filter((x) => x.sj === CUR).length, nCh = viewChapters().length;
+  $('#subtitle').textContent = `${fmtN(nCh)} chapters · ${fmtN(nQ)} questions · ${fmtN(nCards)} cards`;
+  $('#subjects').innerHTML = SUBJECTS.map((x) => `<button role="tab" data-subj="${x.id}" aria-selected="${x.id === CUR}">${esc(x.short)}<small>${fmtN(GQ.filter((q) => q.sj === x.id).length)}</small></button>`).join('');
+}
+$('#subjects').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-subj]'); if (!b || b.dataset.subj === CUR) return;
+  CUR = b.dataset.subj;
+  try { localStorage.setItem('semio-subject', CUR); } catch (err) { /* ignore */ }
+  stopPod(); pod.idx = 0;
+  started = false; cur = null; queue = []; gMode = null; $('#gq').innerHTML = ''; caseDone = 0;
+  for (const id of ['#sec-filter', '#case-ch', '#cards-ch', '#sum-ch', '#pod-ch', '#g-ch', '#g-src']) $(id).value = '';
+  refreshAll();
+});
+
 refreshAll();
-gFilt.ch.value = 'I'; gRenderStats();
-try { const t = localStorage.getItem('semio-tab'); if (t && $(`nav.tabs button[data-tab="${t}"]`)) showTab(t); } catch (e) { /* ignore */ }
+if (CUR === 'semio-med') { gFilt.ch.value = 'I'; gRenderStats(); }
+try { const t = localStorage.getItem('semio-tab'); if (t && $(`nav.tabs button[data-tab="${t}"]`)) showTab(t); else showTab('review'); } catch (e) { /* ignore */ }
 initRuntime();
 })();

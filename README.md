@@ -2,17 +2,21 @@
 
 Aplicația **Semiologie Recall** conține un deck cu repetiție spațiată, 868 de grile cu chei verificate față de cursul din 2022, cazuri clinice amestecate, fișe de recall, tabele de contrast și explicații de mecanism. Această versiune o extinde și o face o pagină pe care o deschizi și o trimiți colegilor printr-un link.
 
-## Ce s-a adăugat
+## Ce conține
 
-- **Sources & chapters**: încarci materiale de curs și bănci de grile în orice format: PDF (inclusiv scanat), DOCX, TXT, HTML, poze de pagini sau text lipit.
-  - Claude împarte materialul pe capitole și îl atașează capitolelor existente când se potrivesc.
-  - Grilele din bănci sunt sortate pe capitole și curățate de duplicate.
-  - **Fill to 100** scrie grile noi în același stil până la cel puțin 100 pe capitol.
-  - **Check keys** verifică cheile față de curs: cursul are prioritate, iar grila primește „KEY CORRECTED” și o notă.
+- **Materii**: Semiologie medicală, Semiologie chirurgicală, Fiziopatologie, Farmacologie și Anatomie patologică (Morfopatologie). Materia se alege din bara de sus, iar fiecare tab arată doar conținutul ei. Conținutul original Semiologie Recall face parte din Semiologie medicală.
+- **Review**: carduri cu repetiție spațiată (Space, apoi 1–4), plus un buton care scrie carduri noi pentru capitolul ales.
+- **Questions**: exersare cu feedback după fiecare grilă sau simulare de examen. Filtrele: capitol, sursă, CS/CM, greșelile mele, chei corectate.
+- **Cases**: cazuri clinice amestecate.
+- **Summaries**: o sinteză de examen pentru fiecare capitol.
+- **Podcast**: un dialog scurt despre ce trebuie ținut minte, citit cu voci Claude.
+- **Course**: încarci cursul și băncile de grile ale materiei.
+  - Cursul e împărțit pe capitole.
+  - Grilele potrivite din bancă trec în capitolele noi.
+  - **Fill to 100** scrie grile noi până la cel puțin 100 pe capitol.
+  - **Check keys** verifică cheile față de curs.
   - **⚡ Prepare everything** face toți pașii pentru un capitol.
-- **Exam summaries**: o sinteză completă de examen pe capitol.
-- **Podcast**: un dialog scurt între Ana și Mihai despre ce trebuie ținut minte, citit cu voci Claude.
-- **Tab-urile originale** funcționează și pentru capitolele noi. Cases, Recall & contrasts, Explanations și Review pot scrie conținut nou pentru capitolul ales.
+- **⚙**: țintele (grile și carduri pe capitol), completarea automată și backup-ul.
 
 ## Cum funcționează ca pagină Claude
 
