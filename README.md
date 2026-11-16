@@ -35,6 +35,12 @@ Grilele din anul III din folderul de Drive al cursului (Farmacologie, Fiziopatol
 
 Scriptul `tools/drive_import.py` refă importul pentru alt an sau alt folder.
 
+## Partajare prin LiveSend
+
+În ⚙, butonul **Versiune pentru LiveSend (HTML)** salvează un singur fișier HTML cu tot conținutul de acum: capitole, grile, carduri, cazuri, sinteze și podcasturi. Fișierul se încarcă în panoul livesend.io și se trimite colegilor ca link. Acolo se poate învăța tot, dar fără funcțiile AI și fără adăugare de material. Progresul nu se păstrează între vizite, din cauza izolării paginilor LiveSend. Când adaugi conținut nou, generezi din nou fișierul și îl înlocuiești pe LiveSend.
+
+Același fișier se poate construi și din linia de comandă, dintr-un export al stocării comune: `python3 build.py DOSAR_EXPORT`.
+
 ## Structura
 
 ```

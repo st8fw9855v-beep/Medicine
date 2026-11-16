@@ -334,8 +334,9 @@ select optgroup{font-style:normal;font-weight:700}
       <b>Date</b>
       <p class="hint">Sursele, capitolele, grilele, cardurile, sintezele și podcasturile adăugate aici sunt comune pentru toți cei care deschid pagina. Progresul tău la repetiție este doar al tău.</p>
       <p class="hint" id="st-counts"></p>
-      <div class="controls"><button class="btn" id="st-exp">Exportă backup (.json)</button><button class="btn" id="st-imp">Importă backup</button><button class="btn" id="st-wipe">Șterge tot ce s-a adăugat</button></div>
+      <div class="controls"><button class="btn primary" id="st-share">Versiune pentru LiveSend (HTML)</button><button class="btn" id="st-exp">Exportă backup (.json)</button><button class="btn" id="st-imp">Importă backup</button><button class="btn" id="st-wipe">Șterge tot ce s-a adăugat</button></div>
       <input type="file" id="st-file" accept=".json" hidden>
+      <p class="hint" id="st-share-hint">„Versiune pentru LiveSend” salvează un singur fișier HTML cu tot conținutul de acum (capitole, grile, carduri, cazuri, sinteze, podcasturi). Îl poți încărca pe livesend.io sau trimite colegilor. Acolo se poate învăța tot, dar fără funcțiile AI și fără adăugare de material.</p>
     </div>
   </section>
 
@@ -351,9 +352,9 @@ select optgroup{font-style:normal;font-weight:700}
 
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-<script>
+<script id="base-data">
 /*BASE_DATA*/
 </script>
-<script>
+<script id="app-code">
 /*APP*/
 </script>

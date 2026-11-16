@@ -5,6 +5,8 @@
 (async function () {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
+// Structura curată a paginii, păstrată pentru „Versiune pentru LiveSend” (înainte de orice randare).
+const PRISTINE = ['header.chart', 'main.wrap', '#modal', '#jobs', '#toast'].map((q) => document.querySelector(q)?.outerHTML || '').join('\n');
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]); }
 const md = (s) => (window.DOMPurify && window.marked ? DOMPurify.sanitize(marked.parse(s || '')) : `<pre style="white-space:pre-wrap">${esc(s)}</pre>`);
@@ -78,6 +80,10 @@ function rebuild() {
   GQ_BY = Object.fromEntries(GQ.map((x) => [x.id, x]));
 }
 rebuild();
+
+// Versiunea de partajare (LiveSend): conținutul adăugat vine inclus în fișier, doar pentru citire.
+const SNAP = window.SNAPSHOT && window.SNAPSHOT.user ? window.SNAPSHOT : null;
+if (SNAP) { for (const k of Object.keys(U)) U[k] = SNAP.user[k] || []; rebuild(); }
 
 /* ---------- progres: ca în aplicația originală (browser + cont) ---------- */
 const LS_KEY = 'semio-srs-v1';
@@ -1065,6 +1071,7 @@ function renderSources() {
   $('#target-label').textContent = target;
   const acc = $('#src-access');
   acc.innerHTML = !R.ready ? '<div class="notice info">Mă conectez la Claude…</div>'
+    : !R.db && SNAP ? `<div class="notice info">Versiune de partajare, cu conținutul din ${esc(new Date(SNAP.date).toLocaleDateString('ro-RO'))}. Poți învăța tot ce e aici; materialul nou se adaugă în aplicația din Claude.</div>`
     : !R.db ? '<div class="notice">Pentru a adăuga material, pagina trebuie deschisă în Claude, autentificat. Restul paginii funcționează normal.</div>'
     : !R.canWrite ? '<div class="notice info">Poți învăța tot ce e aici, inclusiv ce au adăugat alții. Doar cei cu drept de editare pot adăuga material; cere proprietarului acces de Contributor.</div>'
     : !R.sample ? '<div class="notice">Claude nu este disponibil aici, deci materialul nou nu poate fi procesat.</div>'
@@ -1307,11 +1314,24 @@ function renderSettings() {
   const nQ = U.grilePacks.reduce((s, p) => s + (p.items?.length || 0), 0), nC = U.cardPacks.reduce((s, p) => s + (p.items?.length || 0), 0);
   $('#st-counts').textContent = `Adăugate până acum: ${U.sources.length} surse, ${nCh} capitole noi, ${nQ} grile, ${nC} carduri, ${U.outputs.length} sinteze/podcasturi/seturi. Împreună cu conținutul original: ${GQ.length} grile și ${CARDS.length} carduri.`;
   $('#st-wipe').hidden = !aiReady(); $('#st-imp').hidden = !aiReady();
+  $('#st-share').hidden = $('#st-share-hint').hidden = !R.db;
 }
 $('#st-save').onclick = () => {
   saveSettings({ ...getSettings(), target: Math.max(10, +$('#st-target').value || 100), batch: Math.min(30, Math.max(5, +$('#st-batch').value || 15)), cardTarget: Math.max(10, +$('#st-ctarget').value || 60), autoFill: $('#st-autofill').checked });
   toast('Setări salvate.'); refreshAll();
 };
+// Un singur fișier HTML cu tot conținutul de acum, pentru LiveSend sau pentru colegi (fără AI).
+function shareHtml() {
+  const style = [...document.querySelectorAll('style')].find((x) => x.textContent.includes('--f-display'))?.textContent || '';
+  const fonts = document.querySelector('link[rel="stylesheet"][href*="fonts.googleapis"]')?.href || '';
+  const libs = [...document.querySelectorAll('script[src]')].filter((x) => /marked|purify/.test(x.src)).map((x) => `<script src="${x.src}"><\/script>`).join('');
+  const snap = { date: new Date().toISOString(), user: { sources: U.sources, chapters: U.chapters, grilePacks: U.grilePacks, cardPacks: U.cardPacks, outputs: U.outputs } };
+  const json = JSON.stringify(snap).replace(/</g, '\\u003c');
+  return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Semiologie Recall</title>' +
+    (fonts ? `<link rel="stylesheet" href="${fonts}">` : '') + `<style>[hidden]{display:none!important}body{margin:0}\n${style}</style></head><body>\n${PRISTINE}\n${libs}` +
+    `<script>window.SNAPSHOT=${json};<\/script><script>${$('#base-data').textContent}<\/script><script>${$('#app-code').textContent}<\/script></body></html>`;
+}
+$('#st-share').onclick = () => saveFile(`semiologie-recall-${today()}.html`, shareHtml());
 $('#st-exp').onclick = async () => {
   const sources = [];
   if (R.db) for (const s of U.sources) sources.push({ ...s, blocks: await sourceBlocks(s.id).catch(() => []) });
