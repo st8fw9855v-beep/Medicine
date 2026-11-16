@@ -976,34 +976,53 @@ onShow.podcast = renderPodcast;
    Banca comună: citirea fișierelor de grile (doar proprietarul)
    ===================================================================== */
 let bankReading = false;
+const bankSubj = (s) => subjOf(s.subject) || (s.subject === 'Mixt' ? 'mixt' : null);
+// Citește un fișier al băncii, bucată cu bucată (se reia de unde a rămas). Sursele „Mixt” (poze cu grile din mai multe
+// materii) primesc materia grilă cu grilă; textul din poze vine din OCR și poate avea greșeli de recunoaștere.
+async function readBankSource(job, src, label, seen) {
+  const snap = await R.db.collection(`sources/${src.id}/chunks`).get();
+  const blocks = snap.docs.map((d) => d.data()).sort((a, b) => a.n - b.n).flatMap((d) => d.blocks || []);
+  const chunks = chunkBlocks(blocks, 20000, 1), tail = src.ocr ? '' : blocks.join('\n').slice(-10000);
+  const mixed = src.subject === 'Mixt', meta = { ...src }; delete meta.id;
+  let count = src.extractedCount || 0, added = 0;
+  for (let i = src.doneChunks || 0; i < chunks.length; i++) {
+    if (job.signal.aborted) throw new Error('Oprit.');
+    job.status(`${label}„${src.name}” (partea ${i + 1}/${chunks.length})…`);
+    const res = await askJSON('Extragi grile (întrebări cu răspuns multiplu) dintr-un document de examen de medicină, în română. ' + EXTRACT_RULES +
+      (src.ocr ? ' Textul provine din recunoașterea optică (OCR) a unor poze: corectează greșelile evidente de recunoaștere în enunț și variante, dar nu inventa conținut; dacă răspunsul corect nu e marcat clar în text, deduce-l („dedus”).' : '') +
+      (mixed ? `\nGrilele sunt din materii diferite: pentru fiecare, "subject" = una dintre: ${SUBJECTS.map((x) => x.label).join(', ')}; altfel "altă materie".` : `\nMATERIA: ${src.subject}`) + '\n\n' +
+      (tail && i < chunks.length - 1 ? `FINALUL DOCUMENTULUI (poate conține cheia):\n${tail}\n\n` : '') +
+      `FRAGMENTUL ${i + 1}/${chunks.length}:\n${chunks[i]}\n\nRăspunde doar cu JSON: {"questions":[{"stem":"…","options":["…"],"correct":[0],"explanation":"…","topic":"…",${mixed ? '"subject":"…",' : ''}"answerSource":"cheie"|"dedus"}]}`, { signal: job.signal });
+    const bySubj = {};
+    for (const raw of res.questions || []) {
+      const q = sanitizeQ(raw); if (!q || seen.has(normStem(q.q))) continue;
+      const sj = mixed ? subjOf(raw.subject) : bankSubj(src); if (!sj) continue;
+      seen.add(normStem(q.q));
+      (bySubj[sj] ||= []).push({ id: uid('u'), ...q, n: raw.answerSource === 'dedus' ? 'Sursa nu dădea cheia acestei grile; cheia a fost stabilită de AI. Verific-o cu cursul.' : '', m: false });
+    }
+    for (const [sj, items] of Object.entries(bySubj)) { await R.db.collection('grile').doc(uid('gp')).set({ ch: '', src: src.id, subj: SUBJ_BY[sj].label, items, createdAt: Date.now() }); count += items.length; added += items.length; }
+    await R.db.collection('sources').doc(src.id).set({ ...meta, doneChunks: i + 1, nChunks: chunks.length, extractedCount: count });
+  }
+  await R.db.collection('sources').doc(src.id).set({ ...meta, doneChunks: chunks.length, nChunks: chunks.length, extractedCount: count, extractedAt: Date.now() });
+  return added;
+}
 async function readBank() {
   if (bankReading || !R.isOwner || !aiReady()) return;
-  const todo = BANK.sources.filter((s) => !s.extractedAt && subjOf(s.subject));
+  const todo = BANK.sources.filter((s) => !s.extractedAt && bankSubj(s));
   if (!todo.length) return;
   bankReading = true;
   await runJob('Citesc banca de grile', async (job) => {
-    let added = 0;
-    for (let n = 0; n < todo.length; n++) {
-      const src = BANK.sources.find((s) => s.id === todo[n].id) || todo[n];
-      const snap = await R.db.collection(`sources/${src.id}/chunks`).get();
-      const blocks = snap.docs.map((d) => d.data()).sort((a, b) => a.n - b.n).flatMap((d) => d.blocks || []);
-      const chunks = chunkBlocks(blocks, 20000, 1), tail = blocks.join('\n').slice(-10000);
-      const seen = new Set(BANK_Q.map((x) => normStem(x.q))); let count = src.extractedCount || 0;
-      const meta = { ...src }; delete meta.id;
-      for (let i = src.doneChunks || 0; i < chunks.length; i++) {
-        if (job.signal.aborted) throw new Error('Oprit.');
-        job.status(`[fișier ${n + 1}/${todo.length}] „${src.name}” (partea ${i + 1}/${chunks.length})…`); job.progress(i / chunks.length);
-        const res = await askJSON('Extragi grile (întrebări cu răspuns multiplu) dintr-un document de examen de medicină, în română. ' + EXTRACT_RULES + `\nMATERIA: ${src.subject}\n\n` +
-          (tail && i < chunks.length - 1 ? `FINALUL DOCUMENTULUI (poate conține cheia):\n${tail}\n\n` : '') +
-          `FRAGMENTUL ${i + 1}/${chunks.length}:\n${chunks[i]}\n\nRăspunde doar cu JSON: {"questions":[{"stem":"…","options":["…"],"correct":[0],"explanation":"…","topic":"…","answerSource":"cheie"|"dedus"}]}`, { signal: job.signal });
-        const items = [];
-        for (const raw of res.questions || []) { const q = sanitizeQ(raw); if (!q || seen.has(normStem(q.q))) continue; seen.add(normStem(q.q)); items.push({ id: uid('u'), ...q, n: raw.answerSource === 'dedus' ? 'Sursa nu dădea cheia acestei grile; cheia a fost stabilită de AI. Verific-o cu cursul.' : '', m: false }); }
-        if (items.length) await R.db.collection('grile').doc(uid('gp')).set({ ch: '', src: src.id, subj: src.subject, items, createdAt: Date.now() });
-        count += items.length; added += items.length;
-        await R.db.collection('sources').doc(src.id).set({ ...meta, doneChunks: i + 1, nChunks: chunks.length, extractedCount: count });
+    const seen = new Set(BANK_Q.map((x) => normStem(x.q)));
+    let added = 0, next = 0, done = 0;
+    // două fișiere în paralel
+    const worker = async () => {
+      while (next < todo.length) {
+        const n = next++, src = BANK.sources.find((s) => s.id === todo[n].id) || todo[n];
+        const a = await readBankSource(job, src, `[${n + 1}/${todo.length}] `, seen); added += a;
+        done++; job.progress(done / todo.length);
       }
-      await R.db.collection('sources').doc(src.id).set({ ...meta, doneChunks: chunks.length, nChunks: chunks.length, extractedCount: count, extractedAt: Date.now() });
-    }
+    };
+    await Promise.all([worker(), worker()]);
     return `${added} grile noi în bancă`;
   });
   bankReading = false;
@@ -1011,7 +1030,7 @@ async function readBank() {
 function renderBankAdmin() {
   $('#bank-admin').hidden = !(R.isOwner && R.db && aiReady());
   if ($('#bank-admin').hidden) return;
-  const pend = BANK.sources.filter((s) => !s.extractedAt && subjOf(s.subject));
+  const pend = BANK.sources.filter((s) => !s.extractedAt && bankSubj(s));
   $('#bank-status').innerHTML = SUBJECTS.map((s) => `${esc(s.short)}: <b>${fmtN(BANK_Q.filter((x) => x.sj === s.id).length)}</b>`).join(' · ') + ` grile în bancă.${pend.length ? ` Mai sunt de citit ${pend.length} fișiere${bankReading ? ' (citesc acum — ține pagina deschisă)' : ''}.` : ''}`;
   $('#bank-continue').hidden = !pend.length || bankReading;
 }
