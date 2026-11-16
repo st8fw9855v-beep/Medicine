@@ -28,7 +28,7 @@ Aplicația **Semiologie Recall** conține un deck cu repetiție spațiată, 868 
 
 ## Banca de grile din Google Drive
 
-Grilele din anul III din folderul de Drive al cursului (Bioetică, Farmacologie, Fiziopatologie, Imunologie, Morfopatologie, Semiologie medicală și chirurgicală) sunt încărcate în pagină ca „bancă de grile”:
+Grilele din anul III din folderul de Drive al cursului (Farmacologie, Fiziopatologie, Morfopatologie, Semiologie medicală și chirurgicală) sunt încărcate în pagină ca „bancă de grile”:
 - **Citirea:** pagina le citește cu Claude, pe contul proprietarului, la prima deschidere și continuă de unde a rămas dacă e închisă.
 - **Așteptarea pe materii:** grilele așteaptă în bancă, pe materii, până apare capitolul lor.
 - **Când încarci un curs:** după ce cursul e împărțit pe capitole, grilele potrivite din bancă trec automat în capitolele noi. Capitolele noi sunt apoi completate până la 100 de grile; poți dezactiva asta din Settings.

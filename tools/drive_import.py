@@ -18,8 +18,9 @@ Utilizare: python3 tools/drive_import.py FOLDER_ID OUT_DIR ["Anul III"]
 """
 import hashlib, itertools, json, os, re, subprocess, sys, time
 
-SUBJ = {'BIOETICA': 'Bioetică', 'FARMACOLOGIE': 'Farmacologie', 'FIZIOPATOLOGIE': 'Fiziopatologie', 'IMUNOLOGIE': 'Imunologie',
-        'MORFOPATOLOGIE': 'Morfopatologie', 'SEMIO CHIR': 'Semiologie chirurgicală', 'SEMIO MED': 'Semiologie medicală'}
+# Doar materiile din aplicație (Bioetica și Imunologia nu se importă).
+SUBJ = {'FARMACOLOGIE': 'Farmacologie', 'FIZIOPATOLOGIE': 'Fiziopatologie', 'MORFOPATOLOGIE': 'Morfopatologie',
+        'SEMIO CHIR': 'Semiologie chirurgicală', 'SEMIO MED': 'Semiologie medicală'}
 QUESTION_PATH = re.compile(r'grile|grila|teste|test_|intreb', re.I)
 
 
@@ -63,7 +64,7 @@ def is_french(t):
 def main(folder_id, out, year='Anul III'):
     os.makedirs(f'{out}/files', exist_ok=True); os.makedirs(f'{out}/dbdocs', exist_ok=True)
     files = [(i, p) for i, p in list_folder(folder_id)
-             if f'Medicina - {year}/' in p and QUESTION_PATH.search(p) and p.rsplit('.', 1)[-1].lower() in ('pdf', 'docx', 'doc') and '/cursuri' not in p]
+             if f'Medicina - {year}/' in p and p.split('/')[1] in SUBJ and QUESTION_PATH.search(p) and p.rsplit('.', 1)[-1].lower() in ('pdf', 'docx', 'doc') and '/cursuri' not in p]
     texts = {}
     for n, (fid, p) in enumerate(files):
         dst = f'{out}/files/{n:03d}_' + os.path.basename(p).replace(' ', '_')
